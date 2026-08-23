@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  citescan-api:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8083:8000"
+    networks:
+      - badgeia-net
+networks:
+  badgeia-net:
+    external: true
