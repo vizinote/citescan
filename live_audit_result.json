@@ -1,0 +1,210 @@
+{
+ "domain": "https://brozapi.com",
+ "lang": "fr",
+ "keyword": "micro-outils partir pour mettre votre site",
+ "score": {
+  "total": 44,
+  "technical": 100,
+  "citation": 7,
+  "mode": "full"
+ },
+ "technical": {
+  "score": 100,
+  "checks": {
+   "robots": {
+    "status": "pass",
+    "points": 30,
+    "detail": "all major AI bots allowed",
+    "bots": {
+     "GPTBot": "absent",
+     "ClaudeBot": "absent",
+     "PerplexityBot": "absent",
+     "Google-Extended": "absent",
+     "CCBot": "absent",
+     "Amazonbot": "absent",
+     "Bytespider": "absent",
+     "OAI-SearchBot": "absent",
+     "ChatGPT-User": "absent",
+     "Applebot-Extended": "absent"
+    }
+   },
+   "extract": {
+    "status": "pass",
+    "points": 30,
+    "detail": "363 words extractable without JS, 9 headings"
+   },
+   "jsonld": {
+    "status": "pass",
+    "points": 20,
+    "detail": "valid JSON-LD: Organization",
+    "types": [
+     "Organization"
+    ]
+   },
+   "eeat": {
+    "status": "pass",
+    "points": 20,
+    "detail": "about/legal page; no publication dates; no identified author",
+    "signals": [
+     "about/legal page"
+    ],
+    "missing": [
+     "no publication dates",
+     "no identified author"
+    ]
+   }
+  },
+  "word_count": 363
+ },
+ "citations": {
+  "status": "ok",
+  "queries_ok": 15,
+  "total": 15,
+  "cited_count": 1,
+  "queries": [
+   {
+    "query": "Quel est le meilleur micro-outils partir pour mettre votre site pour une petite entreprise ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Où acheter micro-outils partir pour mettre votre site en ligne en France ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "micro-outils partir pour mettre votre site : avis et comparatif 2026",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Quels sont les meilleurs sites de micro-outils partir pour mettre votre site ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Comment choisir un bon micro-outils partir pour mettre votre site ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "micro-outils partir pour mettre votre site pas cher : quelles sont les meilleures options ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Quel professionnel contacter pour micro-outils partir pour mettre votre site ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Top sites recommandés pour micro-outils partir pour mettre votre site",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "micro-outils partir pour mettre votre site : quelles entreprises sont fiables ?",
+    "cited": true,
+    "error": null
+   },
+   {
+    "query": "Meilleure alternative pour micro-outils partir pour mettre votre site en France",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Qui sont les leaders du marché de micro-outils partir pour mettre votre site ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "micro-outils partir pour mettre votre site : comparatif des prix et services",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Où trouver un bon prestataire micro-outils partir pour mettre votre site ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Quels sites sont cités comme référence en micro-outils partir pour mettre votre site ?",
+    "cited": false,
+    "error": null
+   },
+   {
+    "query": "Recommandations d'experts pour micro-outils partir pour mettre votre site",
+    "cited": false,
+    "error": null
+   }
+  ],
+  "competitors": [
+   {
+    "domain": "portail-autoentrepreneur.fr",
+    "count": 8
+   },
+   {
+    "domain": "blog.hubspot.fr",
+    "count": 6
+   },
+   {
+    "domain": "espace-autoentrepreneur.com",
+    "count": 6
+   },
+   {
+    "domain": "fr.wix.com",
+    "count": 6
+   },
+   {
+    "domain": "merci-app.com",
+    "count": 6
+   },
+   {
+    "domain": "tool-advisor.fr",
+    "count": 6
+   },
+   {
+    "domain": "shine.fr",
+    "count": 6
+   },
+   {
+    "domain": "abby.fr",
+    "count": 5
+   },
+   {
+    "domain": "dixmilleheures.fr",
+    "count": 4
+   },
+   {
+    "domain": "ionos.fr",
+    "count": 4
+   }
+  ]
+ },
+ "action_plan": [
+  {
+   "action": "Afficher des dates de publication/mise à jour visibles (balises <time> ou JSON-LD datePublished).",
+   "impact": 5,
+   "effort": 2,
+   "priority_score": 2.5,
+   "rank": 1
+  },
+  {
+   "action": "Des concurrents sont cités à votre place : analyser leurs pages citées et produire un contenu plus complet et plus factuel sur les mêmes sujets.",
+   "impact": 9,
+   "effort": 5,
+   "priority_score": 1.8,
+   "rank": 2
+  },
+  {
+   "action": "Le site est cité sur certaines requêtes seulement : renforcer les pages proches des requêtes non citées.",
+   "impact": 6,
+   "effort": 4,
+   "priority_score": 1.5,
+   "rank": 3
+  }
+ ],
+ "mode": "full",
+ "perplexity_available": true,
+ "generated_at": "2026-08-23T23:56:25Z"
+}

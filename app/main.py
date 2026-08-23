@@ -1,5 +1,6 @@
 """CiteScan API — free technical scan, score /100."""
 import os
+import sys
 import time
 
 import httpx
@@ -7,6 +8,9 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+sys.path.insert(0, os.path.dirname(__file__))
+from audit import run_paid_audit  # noqa: E402
 
 app = FastAPI()
 AI_BOTS = ["GPTBot", "ClaudeBot", "PerplexityBot", "Google-Extended", "CCBot"]
@@ -122,6 +126,15 @@ async def run_scan(domain: str) -> dict:
         {"status": checks["eeat"]["status"], "text": checks["eeat"]["text"][0]},
     ]
     return {"score": min(score, 100), "findings": findings[:3]}
+
+
+@app.get("/api/audit")
+async def paid_audit(url: str, lang: str = "en"):
+    """Paid audit pipeline (carte 3.3): technical + 15 Perplexity Sonar queries.
+    Degraded mode (technical only) when PERPLEXITY_API_KEY is unset — explicit, never silent."""
+    lang = lang if lang in ("fr", "en") else "en"
+    result = await run_paid_audit(url, lang=lang)
+    return JSONResponse(result)
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
