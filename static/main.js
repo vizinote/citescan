@@ -2,11 +2,13 @@ const Lang = (() => {
   const params = new URLSearchParams(location.search);
   let lang = params.get('lang');
   if (!lang) {
-    const nav = (navigator.language || navigator.languages?.[0] || 'en').toLowerCase();
-    lang = nav.startsWith('fr') ? 'fr' : 'en';
+    lang = localStorage.getItem('lang');
+  }
+  if (!lang) {
+    lang = location.pathname.startsWith('/fr') ? 'fr' : 'en';
   }
   localStorage.setItem('lang', lang);
-  return localStorage.getItem('lang');
+  return lang;
 })();
 
 async function loadTexts() {
@@ -20,20 +22,21 @@ async function loadTexts() {
       el.textContent = t[key];
     }
   });
-  // Update switch link
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (t[key] !== undefined) {
+      el.setAttribute('placeholder', t[key]);
+    }
+  });
+  // Update switch link: point to the OTHER language page
   const sw = document.getElementById('lang-switch');
-  if (sw && t.lang_switch) sw.textContent = t.lang_switch;
   if (sw) {
-    const path = Lang === 'fr' ? '/fr/' : '/';
-    sw.setAttribute('href', path + (Lang === 'fr' ? '?lang=' + Lang : '?lang=en'));
+    const other = Lang === 'fr' ? 'en' : 'fr';
+    if (t.lang_switch) sw.textContent = t.lang_switch;
+    sw.setAttribute('href', other === 'fr' ? '/fr/' : '/');
   }
+  return t;
 }
-
-document.getElementById('lang-switch').addEventListener('click', e => {
-  const newLang = Lang === 'fr' ? 'en' : 'fr';
-  localStorage.setItem('lang', newLang);
-  // let link navigate; no need to prevent
-});
 
 // Scan logic
 document.getElementById('scan-form').addEventListener('submit', async (e) => {
@@ -44,16 +47,28 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
   const res = document.getElementById('result');
   err.hidden = true; res.hidden = true;
 
+  const t = await loadTexts() || {};
   let parsed;
-  try { parsed = new URL(url); } catch { return; }
-  if (!/^https?:/.test(parsed.protocol)) return;
+  try { parsed = new URL(url); } catch {
+    err.textContent = t.form_error_invalid || 'Invalid URL';
+    err.hidden = false;
+    return;
+  }
+  if (!/^https?:/.test(parsed.protocol)) {
+    err.textContent = t.form_error_invalid || 'Invalid URL';
+    err.hidden = false;
+    return;
+  }
 
-  btn.disabled = true; btn.textContent = '…';
+  btn.disabled = true;
+  btn.textContent = t.scan_analyzing || '…';
   try {
     const resp = await fetch(`/api/scan?url=${encodeURIComponent(url)}`);
     const data = await resp.json();
     if (!resp.ok) {
-      err.textContent = data.detail || 'Erreur';
+      err.textContent = resp.status === 429
+        ? (t.form_error_rate || data.detail)
+        : (t.form_error_network || data.detail || 'Error');
       err.hidden = false;
       return;
     }
@@ -75,11 +90,11 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
     const cta = document.querySelector('.cta');
     cta.href = '#';
   } catch {
-    err.textContent = 'Impossible de joindre le site';
+    err.textContent = t.form_error_network || 'Network error';
     err.hidden = false;
   } finally {
     btn.disabled = false;
-    await loadTexts();
+    btn.textContent = t.scan_button || 'Scan';
   }
 });
 

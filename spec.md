@@ -70,7 +70,7 @@ Livraison : **poller Stripe** sur le modèle de `/root/accessicheck-deliveries.p
 - **Site + API** : un conteneur Docker sur le VPS Ionos (même pattern que les autres produits Brozapi), derrière Caddy : `citescan.brozapi.com`. Aucun coût récurrent nouveau (hors crédits Perplexity déjà validés, ~5 $).
 - **Stack proposée** : Python + FastAPI (scan + endpoints), site statique/SSR léger, Jinja2 pour le rapport HTML, WeasyPrint pour le PDF (même pile que BadgeIA/AccessiCheck → réutilisation des skills).
 - **Base de données** : SQLite dans le conteneur (scans, rapports, tokens). Rien d'autre.
-- **Secrets** : `PERPLEXITY_API_KEY` et clé Stripe en variables d'environnement (fichier `.env` hors repo, passé au conteneur). **Franck créera le compte Perplexity, rechargera 5 $ et transmettra la clé via OneTimeSecret en Phase 3.**
+- **Secrets** : `PERPLEXITY_API_KEY` et clé Stripe en variables d'environnement (fichier `.env` hors repo, passé au conteneur). **Clé Perplexity déjà reçue et testée (Kimi) — aucune action humaine requise côté API.**
 - **Bilingue dès le lancement** : version **EN par défaut** (internationale) + version **FR** (wedge SEO de lancement, angle « fait pour les TPE/PME françaises » : France Num, SEO français, rapport en français). hreflang FR/EN, détection de la langue du navigateur, bascule manuelle visible dans le header.
 - **Textes** : 100 % externalisés (`textes/en.json`, `textes/fr.json`) — aucune chaîne en dur, l'EN suit sans refonte.
 - **Rapport client** : livré dans la langue du parcours d'achat (FR ou EN) ; templates de rapport bilingues.
@@ -116,4 +116,4 @@ Après le build : exploitation 100 % agents (livraisons, healthcheck, log ventes
 - [x] Bilingue dès le lancement : EN par défaut + FR (wedge SEO), hreflang, bascule manuelle, textes 100 % externalisés, rapport dans la langue du parcours
 - [x] Réalisable en 5 cartes dev, opérable ensuite à 100 % par les agents
 
-**Verrous humains en Phase 3 (build)** : création compte Perplexity + recharge 5 $ + transmission clé via OneTimeSecret (Franck) ; activation Stripe (verrou #3 — validation Franck avant mise en production du paiement).
+**Verrou humain en Phase 3 (build)** : activation Stripe (verrou #3 — validation Franck avant mise en production du paiement). La clé Perplexity est déjà reçue et testée.

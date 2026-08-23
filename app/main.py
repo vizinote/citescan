@@ -125,3 +125,17 @@ async def run_scan(domain: str) -> dict:
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/textes", StaticFiles(directory="textes"), name="textes")
+
+
+@app.get("/")
+async def index_en():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/index.html")
+
+
+@app.get("/fr/")
+@app.get("/fr")
+async def index_fr():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/fr/index.html")
