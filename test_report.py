@@ -323,14 +323,18 @@ def assert_no_hole(testcase, raw_html, label):
     testcase.assertIsNone(
         re.search(r"\S  +[,:.;!?]", text),
         f"{label}: double espace avant ponctuation")
-    # 5. la phrase re-scan doit finir par une date, pas par un trou
-    for m in re.finditer(r"(à partir du|becomes active on)\s*\n?\s*([^\n<]*)", text):
+    # 5. la phrase re-scan DU GABARIT doit finir par une date, pas par un trou.
+    #    Cibler les phrases exactes du gabarit (t_74e5bb97) : un verbatim IA
+    #    peut contenir « à partir du 1er septembre » en prose légitime.
+    for m in re.finditer(
+            r"(actif à partir du|disponible à partir du|becomes active on|available from)"
+            r"\s*\n?\s*([^\n<]*)", text):
         suite = m.group(2).strip()
         testcase.assertTrue(
             re.match(r"(\d{4}-\d{2}-\d{2}|J\+30|day 30)", suite),
             f"{label}: date de re-scan absente après « {m.group(1)} » (trouvé: {suite!r})")
     # 6. la phrase d'intro des verbatims doit contenir les compteurs
-    for m in re.finditer(r"(Nous avons posé|We asked Perplexity)([^\n]*\n?[^\n]*)", text):
+    for m in re.finditer(r"(Nous avons posé|We asked)([^\n]*\n?[^\n]*)", text):
         phrase = m.group(0)
         testcase.assertRegex(phrase, r"\d+",
                              f"{label}: compteurs absents de l'intro verbatims")
@@ -537,6 +541,22 @@ class TestRenderMultiEngines(unittest.TestCase):
 
     def test_no_hole_multi_en(self):
         assert_no_hole(self, self.html_en, "rapport multi EN")
+
+    def test_verbatim_with_apartir_du_is_not_a_hole(self):
+        """Recette live t_74e5bb97 : un verbatim IA contenant « à partir du
+        1er septembre 2026 » (prose légitime) ne doit PAS être pris pour un
+        trou de variable — le contrôle date cible les phrases du gabarit."""
+        def tamper(rep):
+            rep["audit"]["citations"]["engines"]["perplexity"]["queries"][0][
+                "verbatim"] = ("La facturation électronique devient obligatoire "
+                               "à partir du 1er septembre 2026 pour les TPE.")
+        rep = reports.create_report("https://verbatim-apartir.fr", "fr",
+                                    sample_audit_multi())
+        got = reports.get_report(rep["token"])
+        tamper(got)
+        html_page = reports.render_html(got)
+        self.assertIn("à partir du 1er septembre 2026", html_page)
+        assert_no_hole(self, html_page, "rapport multi FR verbatim « à partir du »")
 
 
 if __name__ == "__main__":

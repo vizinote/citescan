@@ -223,10 +223,12 @@ t = re.sub(r"<script.*?</script>", " ", raw, flags=re.S)
 t = re.sub(r"<style.*?</style>", " ", t, flags=re.S)
 t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
 if re.search(r"\S  +[,:.;!?]", t): bad.append("double espace avant ponctuation")
-for m in re.finditer(r"(à partir du|becomes active on)\s*\n?\s*([^\n<]*)", t):
+# Phrases de GABARIT uniquement (t_74e5bb97) : un verbatim IA peut contenir
+# « à partir du 1er septembre » en prose legitime — ce n'est PAS un trou.
+for m in re.finditer(r"(actif à partir du|disponible à partir du|becomes active on|available from)\s*\n?\s*([^\n<]*)", t):
     if not re.match(r"(\d{4}-\d{2}-\d{2}|J\+30|day 30)", m.group(2).strip()):
         bad.append("date re-scan absente apres: " + m.group(1))
-for m in re.finditer(r"(Nous avons posé|We asked Perplexity)([^\n]*\n?[^\n]*)", t):
+for m in re.finditer(r"(Nous avons posé|We asked)([^\n]*\n?[^\n]*)", t):
     if not re.search(r"\d+", m.group(0)):
         bad.append("compteurs verbatims absents")
 print("TROU:" + "; ".join(bad) if bad else "OK")
@@ -416,23 +418,27 @@ else
   hasnot "reel FR : aucun site bricolage (dremel)" "$HREAL" "dremel"
   hasnot "reel FR : aucun site bricolage (milwaukee)" "$HREAL" "milwaukee"
   has "reel FR : vrai tableau HTML des requetes" "$HREAL" "<table>"
+  # multi-moteurs par defaut (toutes cles presentes) : matrice comparative
+  # requete x moteur + ecarts (t_9864864c / t_74e5bb97)
   has "reel FR : colonne Requete testee" "$HREAL" "Requête testée"
-  has "reel FR : colonne Votre site cite" "$HREAL" "Votre site cité ?"
-  has "reel FR : colonne Concurrents cites" "$HREAL" "Concurrents cités"
+  has "reel FR : matrice visibilite par moteur" "$HREAL" "Visibilité par moteur d'IA"
+  has "reel FR : cellules cite oui/non" "$HREAL" "✓ oui"
+  has "reel FR : ecarts entre moteurs" "$HREAL" "Écarts entre moteurs"
   hasnot "reel FR : pas de markdown brut (pipes)" "$HREAL" "| ---"
   hasnot "reel FR : pas de compteur de mots" "$HREAL" "mots extractibles"
   # niveau 2 (t_a857e039) sur pipeline reel
-  has "reel FR : verbatims IA" "$HREAL" "Ce que l'IA répond vraiment"
+  has "reel FR : verbatims IA par moteur" "$HREAL" "Ce que chaque IA répond vraiment (verbatims par moteur)"
   has "reel FR : roadmap 30/60/90" "$HREAL" "Feuille de route 30 / 60 / 90 jours"
   has "reel FR : FAQ prete a publier" "$HREAL" "Votre FAQ prête à publier"
   has "reel FR : JSON-LD FAQPage" "$HREAL" "FAQPage"
   has "reel FR : 3 contenus titre+angle" "$HREAL" "titres et angles fournis"
   has "reel FR : lien rescan J+30" "$HREAL" "/rescan/"
-  # garde-fou budget : cout total mesure affiche, seuil 0,50 $ (t_a857e039)
+  # garde-fou budget multi-moteurs : alerte si audit > 1 USD (t_9864864c) ;
+  # le seuil legacy 0,50 USD visait Perplexity seul.
   COST=$(printf '%s' "$RREAL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("cost_usd"))' 2>/dev/null)
-  echo ">>> COUT REEL DE L'AUDIT (Sonar + V4 pro + fetches) : ${COST:-inconnu} USD (seuil 0.50)"
-  COSTOK=$(python3 -c "c='$COST'; print('oui' if c and c != 'None' and float(c) <= 0.50 else 'non')" 2>/dev/null)
-  ok "cout audit <= 0.50 USD" "$COSTOK" "oui"
+  echo ">>> COUT REEL DE L'AUDIT (multi-moteurs + V4 pro + fetches) : ${COST:-inconnu} USD (seuil 1.00)"
+  COSTOK=$(python3 -c "c='$COST'; print('oui' if c and c != 'None' and float(c) <= 1.00 else 'non')" 2>/dev/null)
+  ok "cout audit <= 1.00 USD" "$COSTOK" "oui"
   PDFR=$(curl -s -o /tmp/t_real_fr.pdf -w "%{http_code}" "$BASE/rapports/$TOKREAL/pdf")
   ok "reel FR : PDF -> 200" "$PDFR" "200"
   has "reel FR : vrai PDF" "$(head -c 5 /tmp/t_real_fr.pdf)" "%PDF-"
@@ -445,7 +451,9 @@ else
   HENL=$(curl -s "$BASE/rapports/$TOKRENL")
   printf '%s' "$HENL" > /tmp/t_real_en.html
   has "reel EN : titre EN" "$HENL" "AI Visibility Audit Report"
-  has "reel EN : verbatims IA" "$HENL" "What the AI actually answers"
+  has "reel EN : matrice visibilite par moteur" "$HENL" "Visibility by AI engine"
+  has "reel EN : verbatims IA par moteur" "$HENL" "What each AI actually answers (verbatims by engine)"
+  has "reel EN : ecarts entre moteurs" "$HENL" "Differences between engines"
   has "reel EN : roadmap 30/60/90" "$HENL" "30 / 60 / 90-day roadmap"
   has "reel EN : FAQ prete" "$HENL" "Your ready-to-publish FAQ"
   has "reel EN : JSON-LD FAQPage" "$HENL" "FAQPage"
