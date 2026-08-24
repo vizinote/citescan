@@ -17,38 +17,46 @@ Tant que le verrou est actif :
 | Page `/merci` FR + EN | ✅ créée (noindex) |
 | CGV FR + EN | ✅ créées (7 jours garantie, rétractation L.221-28 13°) |
 | Mentions légales FR + EN | ✅ créées (RGPD, médiation CM2C) |
-| Script création Payment Link | ✅ prêt, **non exécuté** |
-| Payment Link LIVE | ❌ **non créé** (verrou Franck) |
-| Lien sur la page offre | ❌ **non lié** (verrou Franck) |
+| Script création Payment Links | ✅ prêt, **non exécuté** (pas de clé LIVE sur le VPS) |
+| Payment Links LIVE 29/39/49 € | ❌ **non créés** (clé Stripe manquante) |
+| Liens sur les pages offre | ❌ **non liés** (verrou Franck) |
 
-## Procédure d'activation (quand Franck valide)
+## Procédure en 2 phases (t_6808ea76)
 
-1. **Créer le Payment Link** (sur le VPS, avec la clé LIVE dans `/root/stripe.env`) :
-   ```bash
-   cd /chemin/vers/citescan/stripe
-   python3 create-payment-link.py
-   # Taper 'OUI-FRANCK-A-VALIDE' à la confirmation
-   # Copier l'URL affichée (https://buy.stripe.com/...)
-   ```
+**Phase 1 — Création INACTIVE** (autorisée par le GO pricing, t_9864864c) :
+```bash
+cd /chemin/vers/citescan/stripe
+python3 create-payment-link.py create
+# Taper 'CREER-INACTIFS' — les 3 liens sont créés avec active=false :
+# aucun encaissement possible. Le script écrit /opt/data/citescan-links.json
+# (status: pending_activation) et affiche les STRIPE_PAYMENT_LINKS {29,39,49}
+# à renseigner dans offre.html et en/offer.html.
+```
 
-2. **Lier le Payment Link aux pages** :
-   - `offre.html` et `en/offer.html` : remplacer le `<button disabled>` par le formulaire
-     domaine → Stripe fourni en commentaire dans chaque page (constante `STRIPE_PAYMENT_LINK`
-     à renseigner). Le formulaire redirige vers
-     `<URL>?client_reference_id=<domaine>|<lang>` : **c'est ce qui permet au poller de
-     livraison de savoir quel site auditer et dans quelle langue rédiger le rapport.**
-   - Supprimer le bloc `.cta-disabled-notice`
+**Phase 2 — ACTIVATION (verrou Franck n°3, manuel)** :
+```bash
+python3 create-payment-link.py activate
+# Taper 'OUI-FRANCK-A-VALIDE' → les 3 liens passent active=true,
+# encaissement réel possible à partir de cet instant.
+```
+Puis : décommenter les formulaires des 2 pages offre, push + deploy,
+test bout-en-bout avec achat réel remboursé (verrou Franck).
 
-3. **Enregistrer le lien pour le poller de livraison** (carte 4) : créer sur le VPS
-   `/opt/data/citescan-links.json` :
-   ```json
-   {"links": {"https://buy.stripe.com/<id>": ["audit", "Audit CiteScan 29 €"]}}
-   ```
-   Sans ce fichier, `/root/citescan-deliveries.py` ignore toutes les sessions (rien n'est livré).
+**Après activation — rappel des étapes finales :**
 
-4. **Commit + push + deploy** sur `citescan.brozapi.com`.
-
-5. **Test bout-en-bout** (carte 5) : achat réel de 29 € → vérifier la réception du rapport → rembourser via le dashboard Stripe (tout remboursement reste un verrou Franck).
+1. **Lier les Payment Links aux pages** :
+   - `offre.html` et `en/offer.html` : renseigner la constante `STRIPE_PAYMENT_LINKS`
+     ({29,39,49} → URLs affichées par le script) dans le formulaire fourni en commentaire,
+     décommenter le formulaire, supprimer le bloc `.cta-disabled-notice`. Le formulaire
+     redirige vers `<URL>?client_reference_id=<domaine>|<lang>` : **c'est ce qui permet
+     au poller de livraison de savoir quel site auditer et dans quelle langue rédiger
+     le rapport.**
+2. **Poller de livraison** : `/opt/data/citescan-links.json` est déjà écrit par le
+   script (format `{"links": {"<url>": ["audit", "<label>", <eur>]}, ...}`).
+   Sans ce fichier, `/root/citescan-deliveries.py` ignore toutes les sessions.
+3. **Commit + push + deploy** sur `citescan.brozapi.com`.
+4. **Test bout-en-bout** : achat réel → vérifier la réception du rapport → rembourser
+   via le dashboard Stripe (tout remboursement reste un verrou Franck).
 
 ## Clés et secrets
 
