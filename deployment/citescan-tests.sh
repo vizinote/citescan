@@ -308,10 +308,12 @@ has "offre FR : extra claude" "$OFFR" 'class="eng-extra" value="claude"'
 has "offre FR : grille JS 29/39/49" "$OFFR" 'PRICE_LADDER = {0: 29, 1: 39, 2: 49}'
 has "offre FR : prix dynamique id" "$OFFR" 'id="offer-price"'
 has "offre FR : CTA verrouille" "$OFFR" 'btn--disabled'
-hasnot "offre FR : aucun lien Stripe actif" "$OFFR" 'buy.stripe.com'
+# Liens Stripe ACTIVES le 2026-08-24 18:40 UTC (GO Franck, t_6808ea76) :
+# l'ancien verrou « aucun lien actif » est inverse en anti-regression.
+has "offre FR : liens Stripe actifs (GO Franck)" "$OFFR" 'buy.stripe.com'
 has "offre EN : selecteur present" "$OFFEN" 'id="engine-select"'
 has "offre EN : grille JS" "$OFFEN" 'PRICE_LADDER'
-hasnot "offre EN : aucun lien Stripe actif" "$OFFEN" 'buy.stripe.com'
+has "offre EN : liens Stripe actifs (GO Franck)" "$OFFEN" 'buy.stripe.com'
 ok "style.css sert engine-select" "$(curl -s "$BASE/assets/style.css" | grep -c 'engine-select')" "6"
 
 echo "--- multi-moteurs : rapport multi (fixture, sans cout) ---"
