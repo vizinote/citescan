@@ -414,10 +414,75 @@ INDEXNOW_KEY = "a9e8fc609645365e02a9b0e2703de984"
 
 # Pages publiques indexables (les rapports /rapports/<token> sont noindex,
 # /merci et l'offre restent hors sitemap tant que le paiement n'est pas actif).
-SITEMAP_URLS = [
-    ("https://citescan.brozapi.com/", "1.0"),
-    ("https://citescan.brozapi.com/fr/", "0.9"),
-]
+# Les pages SEO editoriales vivent dans static/blog/ (articles, /blog/<slug>.html)
+# et static/secteurs/ (pages sectorielles, /secteurs/<slug>.html) : elles sont
+# servees et listees au sitemap automatiquement (t_af45f0e5).
+_SEO_DIRS = {
+    "blog": "static/blog",
+    "secteurs": "static/secteurs",
+}
+
+
+def _seo_files(kind):
+    """Liste les fichiers .html (hors index.html) d'une famille SEO."""
+    d = _SEO_DIRS[kind]
+    if not os.path.isdir(d):
+        return []
+    return sorted(
+        fn for fn in os.listdir(d)
+        if fn.endswith(".html") and fn != "index.html"
+    )
+
+
+def _serve_seo_file(kind, page):
+    from fastapi.responses import FileResponse
+    if not re.fullmatch(r"[a-z0-9\-]+\.html", page) or page == "index.html":
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    path = os.path.join(_SEO_DIRS[kind], page)
+    if not os.path.isfile(path):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return FileResponse(path)
+
+
+@app.api_route("/blog/", methods=["GET", "HEAD"])
+@app.api_route("/blog", methods=["GET", "HEAD"])
+async def blog_index():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/blog/index.html")
+
+
+@app.api_route("/blog/{page}", methods=["GET", "HEAD"])
+async def blog_page(page: str):
+    return _serve_seo_file("blog", page)
+
+
+@app.api_route("/secteurs/", methods=["GET", "HEAD"])
+@app.api_route("/secteurs", methods=["GET", "HEAD"])
+async def secteurs_index():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/secteurs/index.html")
+
+
+@app.api_route("/secteurs/{page}", methods=["GET", "HEAD"])
+async def secteur_page(page: str):
+    return _serve_seo_file("secteurs", page)
+
+
+def _sitemap_urls():
+    urls = [
+        ("https://citescan.brozapi.com/", "1.0"),
+        ("https://citescan.brozapi.com/fr/", "0.9"),
+    ]
+    for kind in ("blog", "secteurs"):
+        if os.path.isfile(os.path.join(_SEO_DIRS[kind], "index.html")):
+            urls.append((f"https://citescan.brozapi.com/{kind}/", "0.8"))
+        for fn in _seo_files(kind):
+            urls.append((f"https://citescan.brozapi.com/{kind}/{fn}", "0.7"))
+    return urls
+
+
+# Compatibilite ascendante (tests, scripts) : snapshot au demarrage.
+SITEMAP_URLS = _sitemap_urls()
 
 
 @app.get("/sitemap.xml")
@@ -426,7 +491,7 @@ def sitemap():
     urls = "".join(
         f"  <url><loc>{loc}</loc><changefreq>weekly</changefreq>"
         f"<priority>{prio}</priority></url>\n"
-        for loc, prio in SITEMAP_URLS
+        for loc, prio in _sitemap_urls()
     )
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

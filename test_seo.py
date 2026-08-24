@@ -43,5 +43,34 @@ check("indexnow key corps = cle", r.text.strip() == main.INDEXNOW_KEY)
 check("indexnow key connue brozapi",
       main.INDEXNOW_KEY == "a9e8fc609645365e02a9b0e2703de984")
 
+# --- blog + pages sectorielles (t_af45f0e5) ---
+r = client.get("/blog/")
+check("hub blog 200", r.status_code == 200)
+check("hub blog FR", 'lang="fr"' in r.text)
+r = client.get("/secteurs/")
+check("hub secteurs 200", r.status_code == 200)
+check("hub secteurs FR", 'lang="fr"' in r.text)
+for slug in ("restaurant", "avocat"):
+    r = client.get(f"/secteurs/{slug}.html")
+    check(f"page secteur {slug} 200", r.status_code == 200)
+    check(f"page secteur {slug} canonical",
+          f"https://citescan.brozapi.com/secteurs/{slug}.html" in r.text)
+    check(f"page secteur {slug} CTA scan", "/fr/" in r.text)
+    check(f"page secteur {slug} footer croise", "badgeia.brozapi.com" in r.text
+          and "accessicheck.brozapi.com" in r.text)
+r = client.get("/sitemap.xml")
+check("sitemap liste hub secteurs", "https://citescan.brozapi.com/secteurs/" in r.text)
+check("sitemap liste pages secteurs", "/secteurs/restaurant.html" in r.text
+      and "/secteurs/avocat.html" in r.text)
+# Securite : pas de traversee de chemin, gabarit non public, index non reservi
+r = client.get("/secteurs/..%2F..%2Fapp%2Fmain.py")
+check("secteurs pas de path traversal", r.status_code in (400, 404))
+r = client.get("/blog/_template.html")
+check("gabarit blog non public", r.status_code == 404)
+r = client.get("/blog/index.html")
+check("blog index non reservi en double", r.status_code == 404)
+r = client.get("/secteurs/inexistant.html")
+check("secteur inconnu 404", r.status_code == 404)
+
 print(f"\n{PASS} PASS, {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

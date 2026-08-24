@@ -1,0 +1,39 @@
+/* Pages SEO editoriales CiteScan (blog + secteurs) — identite CiteScan */
+:root { --indigo: #6d28d9; --indigo-dark: #4c1d95; --green: #047857; --ink: #1e293b; --muted: #64748b; --line: #e2e8f0; --bg: #f8fafc; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; line-height: 1.65; }
+a { color: var(--indigo); }
+.container { max-width: 760px; margin: 0 auto; padding: 0 1.25rem; }
+header.site { border-bottom: 1px solid var(--line); }
+header.site .container { display: flex; align-items: center; justify-content: space-between; min-height: 3.5rem; }
+header.site .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
+header.site nav a { margin-left: 1rem; color: var(--muted); text-decoration: none; font-size: 0.95rem; }
+header.site nav a:hover { color: var(--indigo); text-decoration: underline; }
+header.site nav a.cta-nav { color: var(--indigo); font-weight: 600; }
+main { padding: 2rem 0 3rem; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.1rem); line-height: 1.2; color: var(--indigo-dark); margin: 1rem 0 1.25rem; }
+h2 { font-size: 1.3rem; color: var(--indigo-dark); margin: 2rem 0 0.75rem; }
+h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+p, li { font-size: 1rem; }
+ul { padding-left: 1.25rem; }
+li { margin-bottom: 0.4rem; }
+.intro { font-size: 1.08rem; color: #334155; }
+.breadcrumb { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+.breadcrumb a { color: var(--muted); }
+.box { background: var(--bg); border: 1px solid var(--line); border-radius: 0.75rem; padding: 1rem 1.25rem; margin: 1.25rem 0; }
+.box p { margin: 0.25rem 0; }
+.cta-block { text-align: center; background: linear-gradient(180deg, #f5f3ff, #fff); border: 1px solid #ddd6fe; border-radius: 0.75rem; padding: 1.75rem 1.25rem; margin: 2.5rem 0 1rem; }
+.cta-block .btn { display: inline-block; background: var(--indigo); color: #fff; font-weight: 600; padding: 0.8rem 1.5rem; border-radius: 0.6rem; text-decoration: none; margin-top: 0.5rem; }
+.cta-block .btn:hover { background: var(--indigo-dark); }
+.cta-block .price-note { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+.faq details { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.6rem 1rem; margin-bottom: 0.5rem; }
+.faq summary { font-weight: 600; cursor: pointer; }
+.card-list { list-style: none; padding: 0; }
+.card-list li { border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.9rem 1.1rem; margin-bottom: 0.75rem; }
+.card-list a { font-weight: 600; text-decoration: none; }
+.card-list a:hover { text-decoration: underline; }
+.card-list p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.92rem; }
+footer.site { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(--muted); font-size: 0.85rem; }
+footer.site a { color: var(--indigo); }
+footer.site .tools { margin-top: 0.5rem; }
+.disclaimer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: 0.75rem; }
