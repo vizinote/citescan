@@ -105,7 +105,7 @@ cat > /tmp/t_audit_fr.json <<'EOF'
 {"domain": "https://boulangerie-martin.fr", "lang": "fr", "keyword": "boulangerie artisanale",
  "score": {"total": 55, "technical": 55, "citation": 50, "mode": "full"},
  "technical": {"score": 55, "word_count": 180, "checks": {
-   "robots": {"status": "warn", "points": 15, "detail": "robots.txt introuvable — les bots IA sont autorisés par défaut", "bots": {}},
+   "robots": {"status": "warn", "points": 15, "detail": "robots.txt introuvable — les bots IA sont autorisés par défaut", "bots": {"GPTBot": "allowed", "ClaudeBot": "absent", "PerplexityBot": "blocked"}},
    "extract": {"status": "warn", "points": 20, "detail": "contenu textuel un peu mince : étoffez le texte visible sans JavaScript pour maximiser vos chances d'être cité"},
    "jsonld": {"status": "warn", "points": 5, "detail": "aucune donnée structurée JSON-LD"},
    "eeat": {"status": "warn", "points": 10, "detail": "dates de publication présentes; pas de page à propos / mentions légales",
@@ -147,7 +147,7 @@ cat > /tmp/t_audit_en.json <<'EOF'
 {"domain": "https://acme-bakery.com", "lang": "en", "keyword": "artisan bakery",
  "score": {"total": 55, "technical": 55, "citation": 50, "mode": "full"},
  "technical": {"score": 55, "word_count": 180, "checks": {
-   "robots": {"status": "warn", "points": 15, "detail": "robots.txt not found — AI bots default to allowed", "bots": {}},
+   "robots": {"status": "warn", "points": 15, "detail": "robots.txt not found — AI bots default to allowed", "bots": {"GPTBot": "allowed", "ClaudeBot": "absent", "PerplexityBot": "blocked"}},
    "extract": {"status": "warn", "points": 20, "detail": "text content is on the thin side: expand the text visible without JavaScript to maximize your chances of being cited"},
    "jsonld": {"status": "warn", "points": 5, "detail": "no JSON-LD structured data"},
    "eeat": {"status": "warn", "points": 10, "detail": "dates present; no about/legal page",
