@@ -316,6 +316,25 @@ pd_part = audit._parse_deliverables('{"faq": [{"q": "Q ?", "r": "R."}], "roadmap
 check("deliverables: section cassée n' tue pas les autres",
       pd_part is not None and len(pd_part["faq"]) == 1 and pd_part["roadmap"] == {})
 
+# Forme REELLE constatee en prod le 2026-08-24 (V4 pro improvise les noms de
+# cles malgre la spec) : question/reponse, title/description, cles roadmap longues
+raw_prod = json.dumps({
+    "pourquoi_cites": ["L'IA cite les comparatifs."],
+    "actions_contenu": [{"title": "Comparatif X 2026", "description": "Angle chiffré"}],
+    "faq": [{"question": "Combien coûte X ?", "reponse": "Entre 10 et 50 €."}],
+    "roadmap": {"30 premiers jours": ["Publier la FAQ"],
+                "jours 30 a 60": ["Créer le comparatif"],
+                "jours 60 a 90": ["S'inscrire sur G2"]},
+})
+pd_prod = audit._parse_deliverables(raw_prod)
+check("deliverables: alias cles prod (question/reponse/title/description)",
+      pd_prod is not None and
+      pd_prod["actions_contenu"][0]["titre"] == "Comparatif X 2026" and
+      pd_prod["actions_contenu"][0]["angle"] == "Angle chiffré" and
+      pd_prod["faq"][0]["q"] == "Combien coûte X ?" and
+      pd_prod["faq"][0]["r"] == "Entre 10 et 50 €." and
+      list(pd_prod["roadmap"].keys()) == ["j30", "j60", "j90"], str(pd_prod))
+
 # FAQ JSON-LD : valide par construction
 jl = audit.build_faq_jsonld(pd_ok["faq"])
 data_jl = json.loads(jl)

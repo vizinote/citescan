@@ -245,8 +245,20 @@ echo "--- non-regression secteur brozapi.com (pipeline reel) ---"
 if [ "${SKIP_LIVE:-0}" = "1" ]; then
   echo "SKIP tests live (SKIP_LIVE=1)"
 else
-  RREAL=$(curl -s --max-time 500 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
-        -d '{"url":"https://brozapi.com","lang":"fr"}' "$BASE/api/report")
+  # Les 2 audits live (FR + EN) tournent EN PARALLELE (t_a857e039) : le pipeline
+  # niveau 2 dure ~5-6 min par audit, sequentiel on depassait le timeout 570s
+  # de la porte SSH. Le compteur de cout est isole par audit (contextvar).
+  echo ">>> lancement des 2 audits live FR+EN en parallele (~6 min, ~0,25 $ total)"
+  curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
+    -d '{"url":"https://brozapi.com","lang":"fr"}' "$BASE/api/report" > /tmp/t_rreal.json &
+  PID_FR=$!
+  curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
+    -d '{"url":"https://brozapi.com","lang":"en"}' "$BASE/api/report" > /tmp/t_renl.json &
+  PID_EN=$!
+  wait $PID_FR $PID_EN
+  RREAL=$(cat /tmp/t_rreal.json)
+  RENL=$(cat /tmp/t_renl.json)
+
   TOKREAL=$(printf '%s' "$RREAL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
   ok "rapport reel FR cree" "$([ -n "$TOKREAL" ] && echo oui)" "oui"
   HREAL=$(curl -s "$BASE/rapports/$TOKREAL")
@@ -270,6 +282,7 @@ else
   has "reel FR : roadmap 30/60/90" "$HREAL" "Feuille de route 30 / 60 / 90 jours"
   has "reel FR : FAQ prete a publier" "$HREAL" "Votre FAQ prête à publier"
   has "reel FR : JSON-LD FAQPage" "$HREAL" "FAQPage"
+  has "reel FR : 3 contenus titre+angle" "$HREAL" "titres et angles fournis"
   has "reel FR : lien rescan J+30" "$HREAL" "/rescan/"
   # garde-fou budget : cout total mesure affiche, seuil 0,50 $ (t_a857e039)
   COST=$(printf '%s' "$RREAL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("cost_usd"))' 2>/dev/null)
@@ -280,10 +293,8 @@ else
   ok "reel FR : PDF -> 200" "$PDFR" "200"
   has "reel FR : vrai PDF" "$(head -c 5 /tmp/t_real_fr.pdf)" "%PDF-"
 
-  # Rapport live EN (preuve FR+EN, ~0,15 $) — memes controles niveau 2
+  # Rapport live EN (lance en parallele ci-dessus) — memes controles niveau 2
   echo "--- live EN (pipeline reel brozapi.com) ---"
-  RENL=$(curl -s --max-time 500 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
-        -d '{"url":"https://brozapi.com","lang":"en"}' "$BASE/api/report")
   TOKRENL=$(printf '%s' "$RENL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
   ok "rapport reel EN cree" "$([ -n "$TOKRENL" ] && echo oui)" "oui"
   HENL=$(curl -s "$BASE/rapports/$TOKRENL")

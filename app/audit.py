@@ -1016,10 +1016,12 @@ async def write_client_report(audit_data: dict, lang: str) -> "dict | None":
 #
 # Garde-fou budget t_a857e039 : coût total par audit (Sonar + V4 pro + fetches)
 # mesuré et remonté dans le JSON d'audit (champ "cost_usd"). Seuil : 0,50 $.
-# Compteur module-global : les audits sont séquentiels en prod (poller), une
-# éventuelle concurrence ne ferait qu'agréger deux audits — documenté.
+# Compteur par audit via contextvar : deux audits concurrents (tests live
+# FR+EN en parallèle) ne mélangent PAS leurs coûts OpenRouter.
+import contextvars
 
-_OR_METER = {"cost": 0.0, "calls": 0}
+_OR_METER = contextvars.ContextVar("citescan_or_meter",
+                                   default={"cost": 0.0, "calls": 0})
 # Estimation conservative si OpenRouter ne renvoie pas usage.cost
 # (prix $/token, volontairement surestimés pour ne jamais sous-compter).
 _OR_PRICE_IN = 1.0 / 1_000_000
@@ -1027,19 +1029,23 @@ _OR_PRICE_OUT = 4.0 / 1_000_000
 
 
 def _meter_reset():
-    _OR_METER["cost"] = 0.0
-    _OR_METER["calls"] = 0
+    _OR_METER.set({"cost": 0.0, "calls": 0})
+
+
+def _meter_read() -> dict:
+    return _OR_METER.get()
 
 
 def _meter_openrouter(payload: dict):
+    m = _OR_METER.get()
     usage = (payload or {}).get("usage") or {}
-    _OR_METER["calls"] += 1
+    m["calls"] += 1
     cost = usage.get("cost")
     if isinstance(cost, (int, float)) and cost:
-        _OR_METER["cost"] += float(cost)
+        m["cost"] += float(cost)
     else:
-        _OR_METER["cost"] += (usage.get("prompt_tokens", 0) * _OR_PRICE_IN +
-                              usage.get("completion_tokens", 0) * _OR_PRICE_OUT)
+        m["cost"] += (usage.get("prompt_tokens", 0) * _OR_PRICE_IN +
+                      usage.get("completion_tokens", 0) * _OR_PRICE_OUT)
 
 
 # ---------------------------------------------------------------- CMS detection (rapport niveau 2)
@@ -1331,38 +1337,59 @@ def _clean_str_list(value, max_items: int, max_len: int = 400) -> list:
     return out
 
 
+def _first_key(d: dict, *keys) -> "str":
+    """First non-empty string value among alias keys (V4 pro improvises key
+    names despite the spec — observed in prod 2026-08-24: 'question'/'reponse'
+    instead of 'q'/'r')."""
+    if not isinstance(d, dict):
+        return ""
+    for k in keys:
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    return ""
+
+
 def _parse_deliverables(raw: str) -> "dict | None":
     """Tolerant, section-by-section validation of the V4 pro deliverables JSON.
-    A broken section never kills the valid ones."""
+    A broken section never kills the valid ones; common key aliases accepted."""
     data = _parse_json_object(raw)
     if not data:
         return None
     out = {"pourquoi_cites": [], "actions_contenu": [], "faq": [], "roadmap": {}}
-    out["pourquoi_cites"] = _clean_str_list(data.get("pourquoi_cites"), 4)
-    ac = data.get("actions_contenu")
+    out["pourquoi_cites"] = _clean_str_list(
+        data.get("pourquoi_cites") or data.get("pourquoi") or data.get("raisons"), 4)
+    ac = data.get("actions_contenu") or data.get("actions") or data.get("contenus")
     if isinstance(ac, list):
         for a in ac[:3]:
             if not isinstance(a, dict):
                 continue
-            titre = re.sub(r"\s+", " ", str(a.get("titre") or "")).strip()[:150]
-            angle = re.sub(r"\s+", " ", str(a.get("angle") or "")).strip()[:500]
+            titre = re.sub(r"\s+", " ", _first_key(a, "titre", "title", "titre_contenu")).strip()[:150]
+            angle = re.sub(r"\s+", " ", _first_key(a, "angle", "angle_editorial",
+                                                    "description", "resume")).strip()[:500]
             if titre and angle:
                 out["actions_contenu"].append({"titre": titre, "angle": angle})
-    faq = data.get("faq")
+    faq = data.get("faq") or data.get("faq_items") or data.get("questions")
     if isinstance(faq, list):
         for f in faq[:8]:
             if not isinstance(f, dict):
                 continue
-            q = re.sub(r"\s+", " ", str(f.get("q") or "")).strip()[:200]
-            r = re.sub(r"\s+", " ", str(f.get("r") or "")).strip()[:600]
+            q = re.sub(r"\s+", " ", _first_key(f, "q", "question")).strip()[:200]
+            r = re.sub(r"\s+", " ", _first_key(f, "r", "reponse", "réponse", "answer")).strip()[:600]
             if q and r:
                 out["faq"].append({"q": q, "r": r})
-    rm = data.get("roadmap")
+    rm = data.get("roadmap") or data.get("feuille_de_route") or data.get("plan_30_60_90")
     if isinstance(rm, dict):
-        for key in ("j30", "j60", "j90"):
-            items = _clean_str_list(rm.get(key), 5)
-            if items:
-                out["roadmap"][key] = items
+        for key, value in rm.items():
+            # phase = DERNIER repère 30/60/90 de la clé (« jours 30 à 60 » -> j60,
+            # « 30 premiers jours » -> j30)
+            matches = re.findall(r"(30|60|90)", str(key))
+            if not matches:
+                continue
+            phase = f"j{matches[-1]}"
+            items = _clean_str_list(value, 5)
+            if items and phase not in out["roadmap"]:
+                out["roadmap"][phase] = items
     if not any([out["pourquoi_cites"], out["actions_contenu"], out["faq"], out["roadmap"]]):
         return None
     return out
@@ -1476,6 +1503,9 @@ async def generate_deliverables(audit_data: dict, signals: dict, comp_pages: lis
                 parsed = _parse_deliverables(content)
                 if parsed:
                     break
+                # Log borné pour débogage prod (la réponse a changé de forme
+                # une fois déjà — t_a857e039) : on veut voir la forme réelle.
+                print(f"[citescan] deliverables: parse vide, début réponse: {content[:400]!r}")
             except Exception:
                 continue
 
@@ -1580,12 +1610,13 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         result["writer"] = "fallback-library" if OPENROUTER_API_KEY else "no-openrouter-key"
 
     # Garde-fou budget (t_a857e039) : coût total mesuré par audit.
-    or_cost = round(_OR_METER["cost"], 5)
+    meter = _meter_read()
+    or_cost = round(meter["cost"], 5)
     sonar_cost = round(citations.get("cost_usd", 0.0) or 0.0, 5)
     result["cost_usd"] = {
         "citations": sonar_cost,
         "openrouter": or_cost,
-        "openrouter_calls": _OR_METER["calls"],
+        "openrouter_calls": meter["calls"],
         "total": round(sonar_cost + or_cost, 5),
         "budget_max": 0.50,
     }
