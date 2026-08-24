@@ -97,7 +97,7 @@ async def unhandled_exception(request: Request, exc: Exception):
     return JSONResponse({"detail": "temporary server error"}, status_code=502)
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return JSONResponse({"ok": True, "service": "citescan-api"})
 
@@ -307,14 +307,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/textes", StaticFiles(directory="textes"), name="textes")
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def index_en():
     from fastapi.responses import FileResponse
     return FileResponse("static/index.html")
 
 
-@app.get("/fr/")
-@app.get("/fr")
+@app.api_route("/fr/", methods=["GET", "HEAD"])
+@app.api_route("/fr", methods=["GET", "HEAD"])
 async def index_fr():
     from fastapi.responses import FileResponse
     return FileResponse("static/fr/index.html")
