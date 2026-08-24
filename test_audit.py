@@ -477,5 +477,41 @@ check("multi: moteur sans clé écarté, base repliée sur disponibles",
       "chatgpt" in c_missing["engines_missing"] and
       c_missing["status"] == "partial", str(c_missing["engines_run"]))
 
+# t_74e5bb97 : les moteurs tournent EN PARALLELE (sinon un audit 4 moteurs
+# dépasse le timeout 600 s du poller de livraison). 4 faux moteurs de 0,3 s
+# chacun : séquentiel = 1,2 s+, parallèle < 0,9 s.
+import time as _time  # noqa: E402
+for _k in ("PERPLEXITY_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY",
+           "ANTHROPIC_API_KEY"):
+    os.environ[_k] = "test"
+
+async def _slow_fake_run(name, queries, target, lang):
+    await asyncio.sleep(0.3)  # vrai sleep : prouve la concurrence réelle
+    return {"status": "ok", "queries_ok": len(queries), "total": len(queries),
+            "cited_count": 0, "queries": [{"query": q, "cited": False,
+                                           "error": None, "citations": [],
+                                           "verbatim": ""} for q in queries],
+            "competitors": [], "competitor_urls": {}, "cost_usd": 0.0,
+            "engine": name, "engine_label": name}
+
+_orig_run = audit._engine_citation_run
+audit._engine_citation_run = _slow_fake_run
+try:
+    _t0 = _time.monotonic()
+    c_par = asyncio.run(audit.citation_audit(
+        "https://example.fr", "logiciels en ligne", "fr",
+        ["perplexity", "gemini", "chatgpt", "claude"]))
+    _wall = _time.monotonic() - _t0
+finally:
+    audit._engine_citation_run = _orig_run
+    for _k in ("PERPLEXITY_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY",
+               "ANTHROPIC_API_KEY"):
+        os.environ.pop(_k, None)
+check("multi: moteurs exécutés en parallèle (wall < 0,9 s pour 4 x 0,3 s)",
+      _wall < 0.9, f"wall={_wall:.2f}s")
+check("multi: parallèle — résultats identiques au séquentiel",
+      c_par["engines_run"] == ["perplexity", "gemini", "chatgpt", "claude"]
+      and c_par["total"] == 60 and c_par["status"] == "ok")
+
 print(f"\nUNIT: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)

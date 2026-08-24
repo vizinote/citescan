@@ -496,9 +496,15 @@ async def citation_audit(domain: str, keyword: str, lang: str,
 
     queries = build_queries(keyword, lang)
     target = _host_of(domain)
-    per_engine = {}
-    for name in runnable:
-        per_engine[name] = await _engine_citation_run(name, queries, target, lang)
+    # Moteurs EN PARALLELE (t_74e5bb97) : chaque moteur tape un fournisseur
+    # différent (pas de rate-limit partagé) et garde son pacing séquentiel
+    # interne anti-429. Avant, 4 moteurs en série = > 9 min d'audit, au-delà
+    # du timeout 600 s du poller de livraison et du curl 540 s de la recette.
+    # Le temps d'audit devient celui du moteur le plus lent, pas la somme.
+    results = await asyncio.gather(
+        *(_engine_citation_run(name, queries, target, lang)
+          for name in runnable))
+    per_engine = dict(zip(runnable, results))
 
     # --- agrégation inter-moteurs ------------------------------------------
     # Cellule = (requête, moteur). cited/total comptent des cellules ; le
