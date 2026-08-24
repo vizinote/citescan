@@ -68,7 +68,7 @@ has "scan EN : findings en anglais" "$S5" "robots.txt"
 echo "--- rapports FR/EN (rendu) ---"
 cat > /tmp/t_audit_fr.json <<'EOF'
 {"domain": "https://boulangerie-martin.fr", "lang": "fr", "keyword": "boulangerie artisanale",
- "score": {"total": 55, "technical": 55, "citation": null, "mode": "degraded"},
+ "score": {"total": 55, "technical": 55, "citation": 50, "mode": "full"},
  "technical": {"score": 55, "word_count": 180, "checks": {
    "robots": {"status": "warn", "points": 15, "detail": "robots.txt introuvable — les bots IA sont autorisés par défaut", "bots": {}},
    "extract": {"status": "warn", "points": 20, "detail": "contenu textuel un peu mince : étoffez le texte visible sans JavaScript pour maximiser vos chances d'être cité"},
@@ -76,16 +76,41 @@ cat > /tmp/t_audit_fr.json <<'EOF'
    "eeat": {"status": "warn", "points": 10, "detail": "dates de publication présentes; pas de page à propos / mentions légales",
             "signals": ["dates de publication présentes"], "missing": ["pas de page à propos / mentions légales"],
             "signal_codes": ["dates"], "missing_codes": ["about", "author"]}}},
- "citations": {"status": "unavailable", "reason": "PERPLEXITY_API_KEY non définie — mode dégradé (audit technique seul)",
-               "queries": [], "cited_count": 0, "total": 0, "competitors": []},
+ "citations": {"status": "ok", "queries_ok": 2, "total": 2, "cited_count": 1,
+   "queries": [
+     {"query": "Quel est le meilleur boulangerie artisanale pour une petite entreprise ?", "cited": true,
+      "error": null, "citations": ["capterra.com"],
+      "verbatim": "Les boulangeries artisanales les mieux notées sont référencées sur des annuaires spécialisés. Les comparatifs locaux dominent les réponses."},
+     {"query": "Où acheter boulangerie artisanale en ligne en France ?", "cited": false,
+      "error": null, "citations": ["boulangerie-concurrent.fr"],
+      "verbatim": "Plusieurs enseignes proposent la vente en ligne de pain artisanal."}],
+   "competitors": [{"domain": "capterra.com", "count": 2}, {"domain": "boulangerie-concurrent.fr", "count": 1}],
+   "competitor_urls": {"capterra.com": "https://capterra.com/x"},
+   "cost_usd": 0.01, "engine": "agent-api:perplexity/sonar"},
+ "cms": {"cms": "wordpress", "label": "WordPress",
+         "instruction": "WordPress détecté : installez l'extension gratuite « WPCode »."},
+ "platforms": [{"name": "Capterra", "domain": "capterra.com"}],
+ "deliverables": {
+   "pourquoi_cites": ["L'IA privilégie les annuaires avec avis clients vérifiés."],
+   "actions_contenu": [{"titre": "Prix du pain artisanal en 2026 : le guide complet",
+                        "angle": "Transparence tarifaire chiffrée par ville."}],
+   "faq": [{"q": "Combien coûte une baguette artisanale ?",
+            "r": "Comptez entre 1,20 et 1,60 € selon la région."},
+           {"q": "Le pain artisanal se conserve combien de temps ?",
+            "r": "De 2 à 3 jours dans un torchon à température ambiante."}],
+   "faq_jsonld": "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"FAQPage\",\n  \"mainEntity\": [\n    {\n      \"@type\": \"Question\",\n      \"name\": \"Combien coûte une baguette artisanale ?\",\n      \"acceptedAnswer\": {\n        \"@type\": \"Answer\",\n        \"text\": \"Comptez entre 1,20 et 1,60 € selon la région.\"\n      }\n    }\n  ]\n}",
+   "roadmap": {"j30": ["Publier la FAQ fournie"], "j60": ["Créer le guide des prix"],
+               "j90": ["S'inscrire sur Capterra"]},
+   "roadmap_source": "v4-pro", "competitor_pages": [],
+   "writer": "deepseek/deepseek-v4-pro-0813"},
  "action_plan": [{"action": "Ajouter des données structurées JSON-LD sur la page d'accueil.", "impact": 8, "effort": 3, "priority_score": 2.7, "rank": 1}],
  "synthese": "Votre site est techniquement solide mais reste invisible des IA. Ce rapport priorise les actions à mener.",
  "writer": "deepseek/deepseek-v4-pro-0813",
- "mode": "degraded", "generated_at": "2026-08-24T00:00:00Z"}
+ "mode": "full", "generated_at": "2026-08-24T00:00:00Z"}
 EOF
 cat > /tmp/t_audit_en.json <<'EOF'
 {"domain": "https://acme-bakery.com", "lang": "en", "keyword": "artisan bakery",
- "score": {"total": 55, "technical": 55, "citation": null, "mode": "degraded"},
+ "score": {"total": 55, "technical": 55, "citation": 50, "mode": "full"},
  "technical": {"score": 55, "word_count": 180, "checks": {
    "robots": {"status": "warn", "points": 15, "detail": "robots.txt not found — AI bots default to allowed", "bots": {}},
    "extract": {"status": "warn", "points": 20, "detail": "text content is on the thin side: expand the text visible without JavaScript to maximize your chances of being cited"},
@@ -93,12 +118,35 @@ cat > /tmp/t_audit_en.json <<'EOF'
    "eeat": {"status": "warn", "points": 10, "detail": "dates present; no about/legal page",
             "signals": ["dates present"], "missing": ["no about/legal page"],
             "signal_codes": ["dates"], "missing_codes": ["about", "author"]}}},
- "citations": {"status": "unavailable", "reason": "PERPLEXITY_API_KEY not set — degraded mode (technical audit only)",
-               "queries": [], "cited_count": 0, "total": 0, "competitors": []},
+ "citations": {"status": "ok", "queries_ok": 2, "total": 2, "cited_count": 1,
+   "queries": [
+     {"query": "What is the best artisan bakery for a small business?", "cited": true,
+      "error": null, "citations": ["yelp.com"],
+      "verbatim": "The best-rated artisan bakeries are listed on review directories. Local comparisons dominate the answers."},
+     {"query": "Where can I buy artisan bakery online?", "cited": false,
+      "error": null, "citations": ["competitor-bakery.com"],
+      "verbatim": "Several brands sell artisan bread online."}],
+   "competitors": [{"domain": "yelp.com", "count": 2}, {"domain": "competitor-bakery.com", "count": 1}],
+   "competitor_urls": {"yelp.com": "https://yelp.com/x"},
+   "cost_usd": 0.01, "engine": "agent-api:perplexity/sonar"},
+ "cms": {"cms": "webflow", "label": "Webflow",
+         "instruction": "Webflow detected: Project Settings → Custom Code → paste into Head Code."},
+ "platforms": [{"name": "Yelp", "domain": "yelp.com"}],
+ "deliverables": {
+   "pourquoi_cites": ["The AI favors directories with verified customer reviews."],
+   "actions_contenu": [{"titre": "Artisan bread prices in 2026: the complete guide",
+                        "angle": "Transparent per-city pricing with figures."}],
+   "faq": [{"q": "How much does an artisan baguette cost?",
+            "r": "Between $1.50 and $2.50 depending on the region."}],
+   "faq_jsonld": "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"FAQPage\",\n  \"mainEntity\": [\n    {\n      \"@type\": \"Question\",\n      \"name\": \"How much does an artisan baguette cost?\",\n      \"acceptedAnswer\": {\n        \"@type\": \"Answer\",\n        \"text\": \"Between $1.50 and $2.50 depending on the region.\"\n      }\n    }\n  ]\n}",
+   "roadmap": {"j30": ["Publish the provided FAQ"], "j60": ["Create the price guide"],
+               "j90": ["Register on Yelp"]},
+   "roadmap_source": "v4-pro", "competitor_pages": [],
+   "writer": "deepseek/deepseek-v4-pro-0813"},
  "action_plan": [{"action": "Add JSON-LD structured data on the homepage and key pages.", "impact": 8, "effort": 3, "priority_score": 2.7, "rank": 1}],
  "synthese": "Your site is technically sound but invisible to AI assistants. This report prioritizes what to do next.",
  "writer": "deepseek/deepseek-v4-pro-0813",
- "mode": "degraded", "generated_at": "2026-08-24T00:00:00Z"}
+ "mode": "full", "generated_at": "2026-08-24T00:00:00Z"}
 EOF
 
 RFR=$(curl -s -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
@@ -110,12 +158,56 @@ has "rapport FR : titre FR" "$HFR" "Rapport d'audit de visibilité IA"
 has "rapport FR : synthese V4 affichee" "$HFR" "Synthèse"
 has "rapport FR : synthese FR" "$HFR" "invisible des IA"
 has "rapport FR : detail FR" "$HFR" "introuvable"
-has "rapport FR : plan FR" "$HFR" "Plan d'action priorisé"
+has "rapport FR : plan FR" "$HFR" "Plan d'action complet"
 hasnot "rapport FR : zero anglais technique" "$HFR" "without JS"
 hasnot "rapport FR : zero anglais detail" "$HFR" "not found — AI bots"
 hasnot "rapport FR : jargon word count retire" "$HFR" "mots</strong>"
 hasnot "rapport FR : pas de compteur de mots brut" "$HFR" "mots extractibles"
 has "rapport FR : secteur analyse (nouveau libelle)" "$HFR" "Secteur analysé"
+# --- rapport niveau 2 (t_a857e039) : controles exiges ---
+has "rapport FR : top 3 actions" "$HFR" "Vos 3 actions prioritaires"
+has "rapport FR : roadmap 30/60/90 presente" "$HFR" "Feuille de route 30 / 60 / 90 jours"
+has "rapport FR : phase J30" "$HFR" "Les 30 premiers jours"
+has "rapport FR : phase J60" "$HFR" "Jours 30 à 60"
+has "rapport FR : phase J90" "$HFR" "Jours 60 à 90"
+has "rapport FR : verbatims IA presents" "$HFR" "Ce que l'IA répond vraiment"
+has "rapport FR : verbatim reel" "$HFR" "Les boulangeries artisanales les mieux notées"
+has "rapport FR : pourquoi concurrents cites" "$HFR" "Pourquoi vos concurrents sont cités"
+has "rapport FR : 3 contenus titre+angle" "$HFR" "Prix du pain artisanal en 2026"
+has "rapport FR : FAQ presente" "$HFR" "Votre FAQ prête à publier"
+has "rapport FR : question FAQ" "$HFR" "Combien coûte une baguette artisanale ?"
+has "rapport FR : JSON-LD FAQPage affiche" "$HFR" "FAQPage"
+has "rapport FR : CMS instruction (WPCode)" "$HFR" "WPCode"
+has "rapport FR : plateformes/annuaires" "$HFR" "Plateformes et annuaires"
+has "rapport FR : rescan J+30 affiche" "$HFR" "Mesurez vos progrès dans 30 jours"
+has "rapport FR : lien rescan" "$HFR" "/rescan/"
+# JSON-LD du rapport : extraction du bloc <pre class="code"> puis json.loads reel
+printf '%s' "$HFR" > /tmp/t_rep_fr.html
+JLOK=$(python3 - <<'PYEOF'
+import html, json, re
+page = open("/tmp/t_rep_fr.html").read()
+m = re.search(r'<pre class="code">(.*?)</pre>', page, re.S)
+if not m:
+    print("non"); raise SystemExit
+block = html.unescape(m.group(1))
+block = re.sub(r"</?script[^>]*>", "", block).strip()
+try:
+    data = json.loads(block)
+    ok = data.get("@type") == "FAQPage" and len(data.get("mainEntity", [])) >= 1
+    print("oui" if ok else "non")
+except Exception:
+    print("non")
+PYEOF
+)
+ok "rapport FR : JSON-LD FAQPage valide (json.loads)" "$JLOK" "oui"
+# /api/report : url_rescan + top_actions dans la reponse
+has "api report FR : top_actions present" "$RFR" "top_actions"
+has "api report FR : url_rescan presente" "$RFR" "url_rescan"
+RESCAN_TOK=$(printf '%s' "$RFR" | python3 -c 'import sys,json; print((json.load(sys.stdin).get("url_rescan") or "").rsplit("/",1)[-1])' 2>/dev/null)
+ok "rescan token extrait" "$([ -n "$RESCAN_TOK" ] && echo oui)" "oui"
+ok "rescan J+30 : page 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rescan/$RESCAN_TOK")" "200"
+has "rescan J+30 : pas encore eligible (J+30)" "$(curl -s "$BASE/rescan/$RESCAN_TOK")" "disponible"
+ok "rescan inconnu -> 404" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rescan/token-inconnu-xxxxxxxx")" "404"
 
 REN=$(curl -s -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
       -d "{\"lang\":\"en\",\"audit\":$(cat /tmp/t_audit_en.json)}" "$BASE/api/report")
@@ -130,6 +222,16 @@ hasnot "rapport EN : zero FR" "$HEN" "Rapport d'audit"
 hasnot "rapport EN : jargon word count retire" "$HEN" "words</strong>"
 hasnot "rapport EN : pas de compteur de mots brut" "$HEN" "words extractable"
 has "rapport EN : analyzed sector (nouveau libelle)" "$HEN" "Analyzed sector"
+# --- niveau 2 EN ---
+has "rapport EN : top 3 actions" "$HEN" "Your top 3 priority actions"
+has "rapport EN : roadmap 30/60/90" "$HEN" "30 / 60 / 90-day roadmap"
+has "rapport EN : verbatims IA" "$HEN" "What the AI actually answers"
+has "rapport EN : verbatim reel" "$HEN" "The best-rated artisan bakeries"
+has "rapport EN : FAQ" "$HEN" "Your ready-to-publish FAQ"
+has "rapport EN : JSON-LD FAQPage" "$HEN" "FAQPage"
+has "rapport EN : CMS instruction (Custom Code)" "$HEN" "Custom Code"
+has "rapport EN : rescan J+30" "$HEN" "Measure your progress in 30 days"
+has "robots.txt : /rescan/ disallow" "$(curl -s "$BASE/robots.txt")" "Disallow: /rescan/"
 
 PDF=$(curl -s -o /tmp/t_rep.pdf -w "%{http_code}" "$BASE/rapports/$TOKFR/pdf")
 ok "PDF FR -> 200" "$PDF" "200"
@@ -163,9 +265,40 @@ else
   has "reel FR : colonne Concurrents cites" "$HREAL" "Concurrents cités"
   hasnot "reel FR : pas de markdown brut (pipes)" "$HREAL" "| ---"
   hasnot "reel FR : pas de compteur de mots" "$HREAL" "mots extractibles"
+  # niveau 2 (t_a857e039) sur pipeline reel
+  has "reel FR : verbatims IA" "$HREAL" "Ce que l'IA répond vraiment"
+  has "reel FR : roadmap 30/60/90" "$HREAL" "Feuille de route 30 / 60 / 90 jours"
+  has "reel FR : FAQ prete a publier" "$HREAL" "Votre FAQ prête à publier"
+  has "reel FR : JSON-LD FAQPage" "$HREAL" "FAQPage"
+  has "reel FR : lien rescan J+30" "$HREAL" "/rescan/"
+  # garde-fou budget : cout total mesure affiche, seuil 0,50 $ (t_a857e039)
+  COST=$(printf '%s' "$RREAL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("cost_usd"))' 2>/dev/null)
+  echo ">>> COUT REEL DE L'AUDIT (Sonar + V4 pro + fetches) : ${COST:-inconnu} USD (seuil 0.50)"
+  COSTOK=$(python3 -c "c='$COST'; print('oui' if c and c != 'None' and float(c) <= 0.50 else 'non')" 2>/dev/null)
+  ok "cout audit <= 0.50 USD" "$COSTOK" "oui"
   PDFR=$(curl -s -o /tmp/t_real_fr.pdf -w "%{http_code}" "$BASE/rapports/$TOKREAL/pdf")
   ok "reel FR : PDF -> 200" "$PDFR" "200"
   has "reel FR : vrai PDF" "$(head -c 5 /tmp/t_real_fr.pdf)" "%PDF-"
+
+  # Rapport live EN (preuve FR+EN, ~0,15 $) — memes controles niveau 2
+  echo "--- live EN (pipeline reel brozapi.com) ---"
+  RENL=$(curl -s --max-time 500 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
+        -d '{"url":"https://brozapi.com","lang":"en"}' "$BASE/api/report")
+  TOKRENL=$(printf '%s' "$RENL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
+  ok "rapport reel EN cree" "$([ -n "$TOKRENL" ] && echo oui)" "oui"
+  HENL=$(curl -s "$BASE/rapports/$TOKRENL")
+  printf '%s' "$HENL" > /tmp/t_real_en.html
+  has "reel EN : titre EN" "$HENL" "AI Visibility Audit Report"
+  has "reel EN : verbatims IA" "$HENL" "What the AI actually answers"
+  has "reel EN : roadmap 30/60/90" "$HENL" "30 / 60 / 90-day roadmap"
+  has "reel EN : FAQ prete" "$HENL" "Your ready-to-publish FAQ"
+  has "reel EN : JSON-LD FAQPage" "$HENL" "FAQPage"
+  has "reel EN : lien rescan J+30" "$HENL" "/rescan/"
+  hasnot "reel EN : aucun site bricolage (leroymerlin)" "$HENL" "leroymerlin"
+  PDFEN=$(curl -s -o /tmp/t_real_en.pdf -w "%{http_code}" "$BASE/rapports/$TOKRENL/pdf")
+  ok "reel EN : PDF -> 200" "$PDFEN" "200"
+  has "reel EN : vrai PDF" "$(head -c 5 /tmp/t_real_en.pdf)" "%PDF-"
+  echo "$TOKREAL $TOKRENL" > /tmp/t_live_tokens.txt
 fi
 
 # --- 6. Site public (DNS + Caddy) ---

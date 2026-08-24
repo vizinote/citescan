@@ -52,6 +52,25 @@
   .cited-no { color: var(--fail); font-weight: 700; }
   .notice { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
             padding: 12px 16px; font-size: .9rem; }
+  .top3 { background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 12px; padding: 18px 22px; }
+  .top3 ol { margin: 8px 0 0; padding-left: 22px; }
+  .top3 li { margin: 8px 0; }
+  .phase { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--violet);
+           border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+  .phase h3 { margin-top: 0; color: var(--violet); }
+  .phase ul { margin: 6px 0 0; padding-left: 20px; }
+  .deliv { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+           padding: 14px 18px; margin: 12px 0; }
+  .verbatim { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--emeraude);
+              border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .verbatim .q { font-weight: 700; }
+  .verbatim blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--border);
+                         color: #334155; font-style: italic; }
+  pre.code { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 14px 16px;
+             overflow-x: auto; font-size: .8rem; line-height: 1.45; white-space: pre-wrap;
+             word-break: break-word; }
+  .annexe { color: var(--muted); font-size: .85rem; text-transform: uppercase;
+            letter-spacing: 1px; margin-top: 3rem; }
   footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
            color: var(--muted); font-size: .82rem; }
   @page { size: A4; margin: 18mm 14mm; }
@@ -59,7 +78,7 @@
     body { background: #fff; }
     header.band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     h2 { page-break-after: avoid; }
-    .check, .action, table { page-break-inside: avoid; }
+    .check, .action, .phase, .deliv, .verbatim, table { page-break-inside: avoid; }
   }
 </style>
 </head>
@@ -103,7 +122,124 @@
   <p>{{ synthese }}</p>
   {% endif %}
 
-  <h2>1. Audit technique détaillé</h2>
+  {% if top_actions %}
+  <h2>Vos 3 actions prioritaires</h2>
+  <div class="top3">
+    <ol>
+    {% for a in top_actions %}
+      <li>{{ a.action }} <span class="impact">(impact {{ a.impact }}/10 · effort {{ a.effort }}/10)</span></li>
+    {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  {% if roadmap %}
+  <h2>Feuille de route 30 / 60 / 90 jours</h2>
+  {% if roadmap.j30 %}
+  <div class="phase">
+    <h3>Les 30 premiers jours — les fondations</h3>
+    <ul>{% for item in roadmap.j30 %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if roadmap.j60 %}
+  <div class="phase">
+    <h3>Jours 30 à 60 — le contenu qui se fait citer</h3>
+    <ul>{% for item in roadmap.j60 %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if roadmap.j90 %}
+  <div class="phase">
+    <h3>Jours 60 à 90 — l'autorité et la mesure</h3>
+    <ul>{% for item in roadmap.j90 %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if actions_contenu %}
+  <h2>3 contenus à créer (titres et angles fournis)</h2>
+  <p>Les pages citées par l'IA chez vos concurrents ont été analysées. Voici les contenus
+  qui vous feront rattraper l'écart — chacun avec son titre exact et son angle.</p>
+  {% for a in actions_contenu %}
+  <div class="deliv">
+    <h3>📝 « {{ a.titre }} »</h3>
+    <p><strong>Angle :</strong> {{ a.angle }}</p>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if faq %}
+  <h2>Votre FAQ prête à publier</h2>
+  <p>Les questions qu'un acheteur de votre secteur pose avant de payer — réponses rédigées,
+  prêtes à copier-coller sur votre site. Publiez-la puis collez le bloc JSON-LD ci-dessous :
+  c'est exactement le format que les IA lisent le mieux.</p>
+  {% for f in faq %}
+  <div class="deliv">
+    <h3>{{ f.q }}</h3>
+    <p>{{ f.r }}</p>
+  </div>
+  {% endfor %}
+
+  {% if faq_jsonld %}
+  <h3>Bloc JSON-LD FAQPage à copier-coller</h3>
+  {% if cms_instruction %}<p>{{ cms_instruction }}</p>{% endif %}
+  <pre class="code">&lt;script type="application/ld+json"&gt;
+{{ faq_jsonld }}
+&lt;/script&gt;</pre>
+  {% endif %}
+  {% endif %}
+
+  {% if platforms %}
+  <h2>Plateformes et annuaires où vos concurrents sont présents (pas vous)</h2>
+  <p>L'IA cite ces plateformes dans votre secteur. Chaque inscription est une porte d'entrée
+  supplémentaire pour être cité — la plupart sont gratuites.</p>
+  <table>
+    <tr><th>Plateforme</th><th>Domaine cité</th></tr>
+    {% for p in platforms %}
+    <tr><td>{{ p.name }}</td><td>{{ p.domain }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if rescan_url %}
+  <h2>Mesurez vos progrès dans 30 jours — gratuit</h2>
+  <p>Votre lien de re-scan gratuit (sans compte) sera actif à partir du
+  <strong>{{ rescan_date }}</strong> : <a href="{{ rescan_url }}">{{ rescan_url }}</a><br>
+  Il relance un audit complet et compare votre nouveau score à celui d'aujourd'hui.
+  Ce lien est aussi dans l'email de livraison.</p>
+  {% endif %}
+
+  <p class="annexe">— Annexes : le détail des mesures —</p>
+
+  {% if pourquoi_cites %}
+  <h2>Pourquoi vos concurrents sont cités</h2>
+  {% for p in pourquoi_cites %}<p>• {{ p }}</p>{% endfor %}
+  {% endif %}
+
+  {% if citations_status in ("ok", "partial") %}
+  <h2>Ce que l'IA répond vraiment (verbatims)</h2>
+  <p>Nous avons posé <strong>{{ citations_total }} questions d'intention d'achat</strong> à Perplexity
+  dans votre secteur : votre site est cité dans <strong>{{ cited_count }} réponse(s) sur
+  {{ citations_total }}</strong>. Pour chaque question, voici la réponse réelle de Perplexity
+  (extrait) et qui elle cite — c'est ce que vos clients potentiels lisent aujourd'hui.</p>
+  {% if citations_status == "partial" %}
+  <p class="notice">⚠ Certaines requêtes ont échoué (limite API) : résultats partiels.</p>
+  {% endif %}
+  {% for q in queries %}
+  <div class="verbatim">
+    <div class="q">{{ q.query }}</div>
+    {% if q.error %}
+    <p class="cited-no">Requête en erreur — non comptabilisée.</p>
+    {% else %}
+    {% if q.verbatim %}<blockquote>« {{ q.verbatim }} »</blockquote>{% endif %}
+    <p>{% if q.cited %}<span class="cited-yes">✓ Votre site est cité dans cette réponse.</span>
+    {% else %}<span class="cited-no">✗ Votre site n'est pas cité.</span>{% endif %}
+    {% if q.citations %}<br>Cités à votre place : {{ q.citations | join(", ") }}{% endif %}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <h2>Audit technique détaillé</h2>
   <p>Ces quatre contrôles vérifient que les robots des IA peuvent lire et comprendre votre site.</p>
 
   {% for c in checks %}
@@ -125,14 +261,8 @@
   </div>
   {% endfor %}
 
-  <h2>2. Détection réelle de citations (Perplexity)</h2>
+  <h2>Détail des {{ citations_total }} requêtes testées</h2>
   {% if citations_status in ("ok", "partial") %}
-  <p>Nous avons posé <strong>{{ citations_total }} questions d'intention d'achat</strong> à Perplexity
-  (modèle Sonar), dans votre secteur. Votre site est cité dans
-  <strong>{{ cited_count }} réponse(s) sur {{ citations_total }}</strong>.</p>
-  {% if citations_status == "partial" %}
-  <p class="notice">⚠ Certaines requêtes ont échoué (limite API) : résultats partiels.</p>
-  {% endif %}
   <table>
     <tr><th>Requête testée</th><th>Votre site cité ?</th><th>Concurrents cités</th></tr>
     {% for q in queries %}
@@ -156,24 +286,22 @@
   <p class="notice">Détection de citations indisponible : {{ citations_reason }}.</p>
   {% endif %}
 
-  <h2>3. Plan d'action priorisé</h2>
   {% if action_plan %}
-  <p>Actions classées par ratio impact/effort. Commencez par la priorité 1.</p>
+  <h2>Plan d'action complet (rappel)</h2>
   {% for a in action_plan %}
   <div class="action">
     <span class="rank">{{ a.rank }}</span> {{ a.action }}
     <div class="impact">Impact : {{ a.impact }}/10 · Effort : {{ a.effort }}/10</div>
   </div>
   {% endfor %}
-  {% else %}
-  <p>Aucune action prioritaire détectée — votre site présente de bons signaux de visibilité IA.</p>
   {% endif %}
 
-  <h2>4. Méthodologie et limites</h2>
+  <h2>Méthodologie et limites</h2>
   <p>Cet audit combine : (1) une analyse technique 100 % automatisée de votre page d'accueil et de
-  votre robots.txt ; (2) 15 requêtes réelles posées à Perplexity Sonar dans la langue de votre site,
-  générées à partir de votre secteur analysé (« {{ keyword }} »). Les citations dans les réponses
-  d'IA varient dans le temps et selon les utilisateurs : ce rapport est une photographie à la date
+  votre robots.txt ; (2) {{ citations_total or 15 }} requêtes réelles posées à Perplexity Sonar dans la langue
+  de votre site, générées à partir de votre secteur analysé (« {{ keyword }} ») ; (3) une comparaison
+  automatisée avec les pages concurrentes citées par l'IA. Les citations dans les réponses d'IA
+  varient dans le temps et selon les utilisateurs : ce rapport est une photographie à la date
   de génération, pas une garantie de citations futures.</p>
 
   <footer>

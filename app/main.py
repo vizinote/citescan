@@ -1,4 +1,5 @@
 """CiteScan API — free technical scan, score /100."""
+import asyncio
 import os
 import re
 import sys
@@ -261,14 +262,21 @@ async def create_report(request: Request):
     domain = audit.get("domain") or url
     rep = reports.create_report(domain, lang, audit)
     token = rep["token"]
+    rescan_url = (f"{PUBLIC_BASE}/rescan/{rep['rescan_token']}"
+                  if rep.get("rescan_token") else None)
     return JSONResponse({
         "token": token,
         "domain": domain,
         "lang": lang,
         "mode": (audit.get("score") or {}).get("mode", "degraded"),
         "score": (audit.get("score") or {}).get("total"),
+        "top_actions": [a.get("action", "")
+                        for a in (audit.get("action_plan") or [])[:3]],
+        "cost_usd": (audit.get("cost_usd") or {}).get("total"),
         "url_html": f"{PUBLIC_BASE}/rapports/{token}",
         "url_pdf": f"{PUBLIC_BASE}/rapports/{token}/pdf",
+        "url_rescan": rescan_url,
+        "rescan_date": (rep.get("rescan_eligible") or "")[:10] or None,
     })
 
 
@@ -300,6 +308,51 @@ def report_pdf(token: str):
             "Content-Disposition": f'attachment; filename="citescan-rapport-{slug}.pdf"',
             "X-Robots-Tag": "noindex, nofollow",
         },
+    )
+
+
+# ---------------------------------------------------------------- free re-scan J+30 (rapport niveau 2)
+
+async def _run_rescan(token: str):
+    """Background task: full fresh audit for a re-scan link, then a new report
+    (with_rescan=False — one free re-scan per paid report, no infinite chain)."""
+    rescan = reports.get_rescan(token)
+    if not rescan:
+        return
+    try:
+        audit = await run_paid_audit(rescan["domain"], lang=rescan["lang"])
+        rep = reports.create_report(rescan["domain"], rescan["lang"], audit,
+                                    with_rescan=False)
+        new_score = (audit.get("score") or {}).get("total")
+        reports.set_rescan_status(token, "done", rep["token"], new_score)
+    except Exception:
+        traceback.print_exc()
+        reports.set_rescan_status(token, "error")
+
+
+@app.get("/rescan/{token}", response_class=HTMLResponse)
+async def rescan_page(token: str):
+    """Free J+30 re-scan link (no account): shows availability, launches the
+    audit in the background when eligible, auto-refreshes until done."""
+    rescan = reports.get_rescan(token)
+    if not rescan:
+        return HTMLResponse("Lien introuvable / Link not found.", status_code=404)
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if rescan["status"] == "pending" and now >= rescan["eligible_at"]:
+        reports.set_rescan_status(token, "running")
+        rescan["status"] = "running"
+        asyncio.create_task(_run_rescan(token))
+    elif rescan["status"] == "running":
+        # Crash/restart recovery: a 'running' state older than 15 min is
+        # considered dead — allow one relaunch instead of being stuck forever.
+        used_at = rescan.get("used_at") or ""
+        if used_at and (time.time() - time.mktime(
+                time.strptime(used_at, "%Y-%m-%dT%H:%M:%SZ"))) > 900:
+            reports.set_rescan_status(token, "running")  # refresh used_at
+            asyncio.create_task(_run_rescan(token))
+    return HTMLResponse(
+        reports.render_rescan_page(rescan),
+        headers={"X-Robots-Tag": "noindex, nofollow"},
     )
 
 
@@ -356,6 +409,7 @@ def robots():
         "User-agent: *\n"
         "Allow: /\n"
         "Disallow: /rapports/\n"
+        "Disallow: /rescan/\n"
         "\n"
         "Sitemap: https://citescan.brozapi.com/sitemap.xml\n"
     )

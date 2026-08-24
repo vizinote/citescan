@@ -328,8 +328,9 @@ async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                        lang: str = "en") -> dict:
     """One Perplexity Agent API call (model perplexity/sonar + web_search) with
     429 retry/backoff (Retry-After honored). Citations = union of the URLs
-    cited in the answer annotations and the retrieved search_results sources —
-    the answer text itself is not used by the audit pipeline.
+    cited in the answer annotations and the retrieved search_results sources.
+    The answer text is kept ("answer") to show the client VERBATIMS of what the
+    AI actually says about their sector (rapport niveau 2, t_a857e039).
     Note: structured output (JSON schema) was evaluated and intentionally NOT
     applied here — citation extraction reads verifiable URLs from
     annotations/search_results, never model-generated text, so a schema would
@@ -359,10 +360,11 @@ async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                 delay *= 2
                 continue
             if r.status_code != 200:
-                return {"query": query, "ok": False, "citations": [],
+                return {"query": query, "ok": False, "citations": [], "answer": "",
                         "cost": 0.0, "error": f"HTTP {r.status_code}"}
             data = r.json()
             urls = []
+            answer_parts = []
             for item in data.get("output", []) or []:
                 itype = item.get("type")
                 if itype == "search_results":
@@ -370,19 +372,22 @@ async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                              if x.get("url")]
                 elif itype == "message":
                     for part in item.get("content", []) or []:
+                        if part.get("text"):
+                            answer_parts.append(part["text"])
                         for ann in part.get("annotations", []) or []:
                             if ann.get("url"):
                                 urls.append(ann["url"])
             cost = ((data.get("usage") or {}).get("cost") or {}).get("total_cost") or 0.0
             return {"query": query, "ok": True,
                     "citations": list(dict.fromkeys(urls)),
+                    "answer": " ".join(answer_parts).strip(),
                     "cost": float(cost), "error": None}
         except Exception as e:
             if attempt < retries:
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
-            return {"query": query, "ok": False, "citations": [],
+            return {"query": query, "ok": False, "citations": [], "answer": "",
                     "cost": 0.0, "error": str(e)[:200]}
 
 
@@ -436,8 +441,24 @@ def _host_of(url: str) -> str:
         return ""
 
 
+def _verbatim(text: str, max_chars: int = 300) -> str:
+    """First 1-2 real sentences of an AI answer, capped — the client sees what
+    the AI literally says (rapport niveau 2). Strips markdown noise/citation
+    brackets so the quote reads cleanly."""
+    t = re.sub(r"\[\d+\]", "", text or "")          # [1]-style citation markers
+    t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)        # **bold**
+    t = re.sub(r"\s+", " ", t).strip()
+    if not t:
+        return ""
+    parts = [p for p in re.split(r"(?<=[.!?…])\s+", t) if p.strip()]
+    out = " ".join(parts[:2]) if parts else t
+    if len(out) > max_chars:
+        out = out[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    return out
+
+
 async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
-    """15 Sonar queries; per query: client cited? competitors cited?"""
+    """15 Sonar queries; per query: client cited? competitors cited? verbatim?"""
     if not PERPLEXITY_API_KEY:
         reason = ("PERPLEXITY_API_KEY non définie — mode dégradé (audit technique seul)"
                   if lang == "fr" else
@@ -460,10 +481,12 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     cited_count = 0
     ok_count = 0
     comp_counter = {}
+    comp_urls = {}
     for res in results:
         if not res["ok"]:
             per_query.append({"query": res["query"], "cited": False,
-                              "error": res["error"], "citations": []})
+                              "error": res["error"], "citations": [],
+                              "verbatim": ""})
             continue
         ok_count += 1
         hosts = [_host_of(c) for c in res["citations"]]
@@ -473,8 +496,14 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
         comps = sorted({h for h in hosts if h and h != target})
         for h in comps:
             comp_counter[h] = comp_counter.get(h, 0) + 1
+            if h not in comp_urls:
+                # first full cited URL for this competitor (used by the gap
+                # analysis to fetch the exact page the AI cited)
+                comp_urls[h] = next((c for c in res["citations"]
+                                     if _host_of(c) == h), f"https://{h}")
         per_query.append({"query": res["query"], "cited": cited,
-                          "error": None, "citations": comps[:5]})
+                          "error": None, "citations": comps[:5],
+                          "verbatim": _verbatim(res.get("answer", ""))})
 
     competitors = [{"domain": d, "count": c} for d, c in
                    sorted(comp_counter.items(), key=lambda x: -x[1])][:10]
@@ -482,7 +511,8 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     cost_usd = round(sum(r.get("cost", 0.0) for r in results), 5)
     return {"status": status, "queries_ok": ok_count, "total": len(queries),
             "cited_count": cited_count, "queries": per_query,
-            "competitors": competitors, "cost_usd": cost_usd,
+            "competitors": competitors, "competitor_urls": comp_urls,
+            "cost_usd": cost_usd,
             "engine": "agent-api:perplexity/sonar"}
 
 
@@ -640,7 +670,9 @@ async def _openrouter_json(system: str, user: str, max_tokens: int = 2500) -> "d
                             "X-Title": "CiteScan sector detection"})
             if r.status_code != 200:
                 continue
-            content = r.json()["choices"][0]["message"].get("content")
+            payload = r.json()
+            _meter_openrouter(payload)
+            content = payload["choices"][0]["message"].get("content")
             if not content:
                 continue
             parsed = _parse_json_object(content)
@@ -967,7 +999,9 @@ async def write_client_report(audit_data: dict, lang: str) -> "dict | None":
                             "X-Title": "CiteScan report writer"})
             if r.status_code != 200:
                 continue
-            content = r.json()["choices"][0]["message"].get("content")
+            payload = r.json()
+            _meter_openrouter(payload)
+            content = payload["choices"][0]["message"].get("content")
             if not content:
                 continue
             parsed = _parse_writer_output(content)
@@ -978,10 +1012,489 @@ async def write_client_report(audit_data: dict, lang: str) -> "dict | None":
     return None
 
 
+# ---------------------------------------------------------------- cost meter (garde-fou budget)
+#
+# Garde-fou budget t_a857e039 : coût total par audit (Sonar + V4 pro + fetches)
+# mesuré et remonté dans le JSON d'audit (champ "cost_usd"). Seuil : 0,50 $.
+# Compteur module-global : les audits sont séquentiels en prod (poller), une
+# éventuelle concurrence ne ferait qu'agréger deux audits — documenté.
+
+_OR_METER = {"cost": 0.0, "calls": 0}
+# Estimation conservative si OpenRouter ne renvoie pas usage.cost
+# (prix $/token, volontairement surestimés pour ne jamais sous-compter).
+_OR_PRICE_IN = 1.0 / 1_000_000
+_OR_PRICE_OUT = 4.0 / 1_000_000
+
+
+def _meter_reset():
+    _OR_METER["cost"] = 0.0
+    _OR_METER["calls"] = 0
+
+
+def _meter_openrouter(payload: dict):
+    usage = (payload or {}).get("usage") or {}
+    _OR_METER["calls"] += 1
+    cost = usage.get("cost")
+    if isinstance(cost, (int, float)) and cost:
+        _OR_METER["cost"] += float(cost)
+    else:
+        _OR_METER["cost"] += (usage.get("prompt_tokens", 0) * _OR_PRICE_IN +
+                              usage.get("completion_tokens", 0) * _OR_PRICE_OUT)
+
+
+# ---------------------------------------------------------------- CMS detection (rapport niveau 2)
+#
+# Le rapport dit au client OÙ coller son JSON-LD selon son CMS (WordPress,
+# Webflow...) au lieu d'une consigne technique générique.
+
+_CMS_SIGNATURES = [
+    ("wordpress", "WordPress", ["wp-content/", "wp-includes/", "wordpress"]),
+    ("shopify", "Shopify", ["cdn.shopify.com", "shopify.theme", "myshopify.com"]),
+    ("webflow", "Webflow", ["webflow.js", "data-wf-", "website-files.com"]),
+    ("wix", "Wix", ["wixstatic.com", "x-wix-", "_wix_browser_sess"]),
+    ("squarespace", "Squarespace", ["squarespace.com", "static1.squarespace"]),
+    ("prestashop", "PrestaShop", ["prestashop", "presta-shop"]),
+    ("joomla", "Joomla", ["/media/jui/", "joomla!"]),
+    ("drupal", "Drupal", ["drupal.js", "/sites/default/files"]),
+    ("ghost", "Ghost", ["ghost.io", "content/images/"]),
+    ("framer", "Framer", ["framer.com", "framerusercontent.com"]),
+    ("hubspot", "HubSpot", ["hs-scripts.com", "hubspot.net"]),
+    ("magento", "Magento / Adobe Commerce", ["mage/cookies", "magento"]),
+]
+
+_CMS_INSTRUCTIONS = {
+    "fr": {
+        "wordpress": "WordPress détecté : installez l'extension gratuite « WPCode » (ou « Rank Math »), "
+                     "puis collez le bloc JSON-LD ci-dessous dans un nouvel extrait « HTML » appliqué "
+                     "à l'en-tête de la page d'accueil (Insertion → En-tête).",
+        "shopify": "Shopify détecté : Boutique en ligne → Thèmes → ⋯ → Modifier le code → "
+                   "ouvrez layout/theme.liquid et collez le bloc JSON-LD juste avant </head>.",
+        "webflow": "Webflow détecté : Project Settings → Custom Code → collez le bloc JSON-LD "
+                   "dans « Head Code », puis republiez le site.",
+        "wix": "Wix détecté : Paramètres → Code personnalisé → « + Ajouter un code » → collez le "
+               "bloc JSON-LD, appliquez à « Toutes les pages », placement « En-tête ».",
+        "squarespace": "Squarespace détecté : Paramètres → Avancé → Injection de code → collez "
+                       "le bloc JSON-LD dans « En-tête », puis enregistrez.",
+        "prestashop": "PrestaShop détecté : collez le bloc JSON-LD dans le fichier "
+                      "themes/<votre-theme>/templates/_partials/head.tpl, entre les balises "
+                      "{literal}…{/literal}, ou utilisez un module « FAQ SEO ».",
+        "joomla": "Joomla détecté : Extensions → Templates → votre template → index.php, "
+                  "collez le bloc JSON-LD avant </head> (ou via une extension « Custom HTML »).",
+        "drupal": "Drupal détecté : Structure → Blocs → « Custom block » en HTML complet contenant "
+                  "le bloc JSON-LD, placé en région « Header », ou via le module Metatag.",
+        "ghost": "Ghost détecté : Settings → Code injection → collez le bloc JSON-LD dans "
+                 "« Site header », puis enregistrez.",
+        "framer": "Framer détecté : Site Settings → Custom Code → collez le bloc JSON-LD dans "
+                  "« Start of <head> tag », puis republiez.",
+        "hubspot": "HubSpot détecté : Paramètres → Contenu → Pages → HTML de l'en-tête du site → "
+                   "collez le bloc JSON-LD, puis publiez.",
+        "magento": "Magento détecté : Contenu → Configuration → HTML Head → « Scripts and Style "
+                   "Sheets » → collez le bloc JSON-LD, puis videz le cache.",
+        "unknown": "Collez le bloc JSON-LD ci-dessous tel quel dans le code HTML de votre page "
+                   "d'accueil, juste avant la balise </head> (ou confiez-le à votre développeur / "
+                   "agence — 5 minutes de travail).",
+    },
+    "en": {
+        "wordpress": "WordPress detected: install the free « WPCode » plugin (or « Rank Math »), "
+                     "then paste the JSON-LD block below into a new « HTML » snippet applied to "
+                     "the homepage header (Insertion → Header).",
+        "shopify": "Shopify detected: Online Store → Themes → ⋯ → Edit code → open "
+                   "layout/theme.liquid and paste the JSON-LD block just before </head>.",
+        "webflow": "Webflow detected: Project Settings → Custom Code → paste the JSON-LD block "
+                   "into « Head Code », then republish the site.",
+        "wix": "Wix detected: Settings → Custom Code → « + Add Custom Code » → paste the JSON-LD "
+               "block, apply to « All pages », placement « Head ».",
+        "squarespace": "Squarespace detected: Settings → Advanced → Code Injection → paste the "
+                       "JSON-LD block into « Header », then save.",
+        "prestashop": "PrestaShop detected: paste the JSON-LD block into "
+                      "themes/<your-theme>/templates/_partials/head.tpl, inside "
+                      "{literal}…{/literal} tags, or use a « FAQ SEO » module.",
+        "joomla": "Joomla detected: Extensions → Templates → your template → index.php, paste the "
+                  "JSON-LD block before </head> (or via a « Custom HTML » extension).",
+        "drupal": "Drupal detected: Structure → Blocks → a full-HTML « Custom block » containing "
+                  "the JSON-LD block, placed in the « Header » region, or via the Metatag module.",
+        "ghost": "Ghost detected: Settings → Code injection → paste the JSON-LD block into "
+                 "« Site header », then save.",
+        "framer": "Framer detected: Site Settings → Custom Code → paste the JSON-LD block into "
+                  "« Start of <head> tag », then republish.",
+        "hubspot": "HubSpot detected: Settings → Content → Pages → Site header HTML → paste the "
+                   "JSON-LD block, then publish.",
+        "magento": "Magento detected: Content → Configuration → HTML Head → « Scripts and Style "
+                   "Sheets » → paste the JSON-LD block, then flush the cache.",
+        "unknown": "Paste the JSON-LD block below as-is into your homepage HTML, just before the "
+                   "</head> tag (or hand it to your developer / agency — a 5-minute job).",
+    },
+}
+
+
+def detect_cms(html: str, lang: str = "en") -> dict:
+    """Identify the site CMS from the HTML and return localized, actionable
+    instructions telling the client exactly where to paste the JSON-LD."""
+    h = (html or "").lower()
+    key = "unknown"
+    label = "CMS non identifié" if lang == "fr" else "Unidentified CMS"
+    for k, lab, needles in _CMS_SIGNATURES:
+        if any(n in h for n in needles):
+            key, label = k, lab
+            break
+    instr = _CMS_INSTRUCTIONS.get(lang if lang in _CMS_INSTRUCTIONS else "en")
+    return {"cms": key, "label": label, "instruction": instr[key]}
+
+
+# ---------------------------------------------------------------- platforms / directories (rapport niveau 2)
+#
+# Annuaires et plateformes où les domaines cités par l'IA sont présents — et
+# où le client ne l'est pas. Extrait des domaines cités (0 appel LLM).
+
+KNOWN_PLATFORMS = {
+    "capterra": "Capterra", "g2.com": "G2", "g2crowd": "G2",
+    "getapp": "GetApp", "softwareadvice": "Software Advice",
+    "trustradius": "TrustRadius", "trustpilot": "Trustpilot",
+    "trustfolio": "Trustfolio", "appvizer": "Appvizer",
+    "producthunt": "Product Hunt", "sourceforge": "SourceForge",
+    "alternativeto": "AlternativeTo", "saashub": "SaaSHub",
+    "clutch.co": "Clutch", "goodfirms": "GoodFirms", "upcity": "UpCity",
+    "designrush": "DesignRush", "sortlist": "Sortlist",
+    "tripadvisor": "Tripadvisor", "yelp": "Yelp", "pagesjaunes": "PagesJaunes",
+    "yellowpages": "Yellow Pages", "bbb.org": "Better Business Bureau",
+    "houzz": "Houzz", "thumbtack": "Thumbtack", "angi": "Angi",
+    "doctolib": "Doctolib", "booking.com": "Booking",
+    "amazon.": "Amazon", "etsy.": "Etsy", "ebay.": "eBay",
+    "crunchbase": "Crunchbase", "glassdoor": "Glassdoor",
+}
+
+# Domaines à ne PAS fetcher pour l'analyse d'écart (annuaires, médias, UGC) :
+# on veut comparer le site du client à des SITES D'ENTREPRISES concurrentes.
+_GAP_SKIP_FRAGMENTS = set(KNOWN_PLATFORMS) | {
+    "wikipedia", "youtube", "reddit", "quora", "facebook", "instagram",
+    "linkedin", "twitter", "x.com", "tiktok", "pinterest", "medium.com",
+    "substack", "forbes", "lesechos", "lemonde", "bfmtv", "nytimes",
+    "theguardian", "bbc.", "cnn.", "blogspot", "wordpress.com",
+}
+
+
+def extract_platforms(competitor_hosts: list, target_host: str) -> list:
+    """Known directories/platforms among the cited domains (client absent)."""
+    found = {}
+    for h in competitor_hosts:
+        if not h or h == target_host:
+            continue
+        for frag, name in KNOWN_PLATFORMS.items():
+            if frag in h:
+                found.setdefault(name, h)
+    return [{"name": n, "domain": d} for n, d in sorted(found.items())]
+
+
+def _is_skippable_for_gap(host: str) -> bool:
+    return any(frag in (host or "") for frag in _GAP_SKIP_FRAGMENTS)
+
+
+# ---------------------------------------------------------------- gap analysis : fetch des pages concurrentes
+
+async def fetch_competitor_pages(competitors: list, comp_urls: dict,
+                                 max_pages: int = 3) -> list:
+    """Fetch the exact pages the AI cited for the top competitor companies
+    (directories/media/UGC skipped) so V4 pro can compare structure, content
+    and angles with the client's page. Never raises; [] when nothing usable."""
+    picks = []
+    for comp in competitors or []:
+        host = comp.get("domain", "")
+        if not host or _is_skippable_for_gap(host):
+            continue
+        picks.append((host, comp_urls.get(host) or f"https://{host}"))
+        if len(picks) >= max_pages:
+            break
+    pages = []
+    timeout = httpx.Timeout(12.0)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout,
+                                 headers={"User-Agent": "CiteScan-Audit/1.0"}) as client:
+        for host, url in picks:
+            try:
+                r = await client.get(url)
+                if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+                    continue
+                soup = BeautifulSoup(r.text[:400_000], "html.parser")
+                title = (soup.title.string.strip()
+                         if soup.title and soup.title.string else "")
+                headings = "; ".join(h.get_text(" ", strip=True)
+                                     for h in soup.find_all(["h1", "h2"])[:12])
+                for tag in soup(["script", "style", "noscript"]):
+                    tag.decompose()
+                text = soup.get_text(" ", strip=True)[:900]
+                pages.append({"domain": host, "url": str(r.url)[:300],
+                              "title": title[:150], "headings": headings[:600],
+                              "text": text})
+            except Exception:
+                continue
+    return pages
+
+
+# ---------------------------------------------------------------- livrables clé en main (V4 pro)
+#
+# Un seul appel V4 pro produit : pourquoi les concurrents sont cités, 3 actions
+# contenu avec TITRE + ANGLE, la FAQ prête à publier et la roadmap 30/60/90.
+# Le JSON-LD FAQPage est construit PAR LE CODE (json.dumps) à partir de la FAQ
+# rédigée — valide par construction, jamais écrit à la main par le LLM.
+
+_DELIVERABLES_USER = {
+    "fr": """Tu prépares les livrables d'un audit de visibilité IA pour {domain} (secteur : « {keyword} »).
+
+CONTENU DE LA PAGE DU CLIENT :
+Titre : {c_title}
+H1 : {c_h1}
+Description : {c_desc}
+Extrait : {c_text}
+
+POINTS FAIBLES TECHNIQUES DU CLIENT : {weaknesses}
+
+CONCURRENTS CITÉS PAR L'IA (domaine : nb de citations) : {comps}
+
+VERBATIMS — ce que Perplexity répond réellement aux questions d'acheteurs de ce secteur :
+{verbatims}
+
+PAGES CONCURRENTES CITÉES (récupérées pour comparaison) :
+{comp_pages}
+
+CMS du client : {cms}
+
+Produis en français impeccable, pour un dirigeant non technique, le JSON suivant :
+1. "pourquoi_cites" : 2 à 3 phrases courtes expliquant POURQUOI ces concurrents sont cités
+   (quel type de contenu l'IA privilégie visiblement : comparatifs chiffrés, FAQ, guides,
+   avis clients, annuaires…), en t'appuyant sur les verbatims et les pages récupérées.
+2. "actions_contenu" : EXACTEMENT 3 actions de contenu concrètes, chacune avec
+   "titre" (le titre exact de la page/article à créer, prêt à l'emploi) et
+   "angle" (l'angle précis : quels chiffres, quelle promesse, quelle différence vs les
+   pages concurrentes citées). Jamais de généralité du type « produisez de meilleurs contenus ».
+3. "faq" : 6 questions d'intention d'achat RÉELLES du secteur (celles qu'un acheteur pose
+   avant de payer) avec leur réponse rédigée, prête à publier telle quelle sur le site du
+   client. Réponses de 2 à 4 phrases, factuelles, sans nommer de concurrent.
+4. "roadmap" : feuille de route en 3 phases — "j30" (actions des 30 premiers jours :
+   corrections techniques rapides + publication de la FAQ), "j60" (jours 30 à 60 :
+   les 3 contenus ci-dessus), "j90" (jours 60 à 90 : présence sur les plateformes/annuaires,
+   liens, mesure). 2 à 4 éléments par phase, concrets et datés.
+
+JSON attendu : {{"pourquoi_cites": ["...", "..."],
+ "actions_contenu": [{{"titre": "...", "angle": "..."}}],
+ "faq": [{{"q": "...", "r": "..."}}],
+ "roadmap": {{"j30": ["..."], "j60": ["..."], "j90": ["..."]}}}}""",
+    "en": """You are preparing the deliverables of an AI visibility audit for {domain} (sector: "{keyword}").
+
+CLIENT PAGE CONTENT:
+Title: {c_title}
+H1: {c_h1}
+Description: {c_desc}
+Excerpt: {c_text}
+
+CLIENT TECHNICAL WEAKNESSES: {weaknesses}
+
+COMPETITORS CITED BY THE AI (domain: citation count): {comps}
+
+VERBATIMS — what Perplexity actually answers to buyer questions in this sector:
+{verbatims}
+
+CITED COMPETITOR PAGES (fetched for comparison):
+{comp_pages}
+
+Client CMS: {cms}
+
+Produce, in impeccable English for a non-technical owner, the following JSON:
+1. "pourquoi_cites": 2 to 3 short sentences explaining WHY these competitors get cited
+   (what content type the AI visibly favors: data-backed comparisons, FAQs, guides,
+   customer reviews, directories…), grounded in the verbatims and fetched pages.
+2. "actions_contenu": EXACTLY 3 concrete content actions, each with
+   "titre" (the exact title of the page/article to create, ready to use) and
+   "angle" (the precise angle: which figures, which promise, which difference vs the
+   cited competitor pages). Never a generality like "produce better content".
+3. "faq": 6 REAL buyer-intent questions of the sector (the ones a buyer asks before
+   paying) with their written answer, ready to publish as-is on the client's site.
+   2 to 4 sentence answers, factual, never naming a competitor.
+4. "roadmap": a 3-phase plan — "j30" (first 30 days: quick technical fixes + publish
+   the FAQ), "j60" (days 30 to 60: the 3 content pieces above), "j90" (days 60 to 90:
+   presence on directories/platforms, links, measurement). 2 to 4 concrete items per phase.
+
+Expected JSON: {{"pourquoi_cites": ["...", "..."],
+ "actions_contenu": [{{"titre": "...", "angle": "..."}}],
+ "faq": [{{"q": "...", "r": "..."}}],
+ "roadmap": {{"j30": ["..."], "j60": ["..."], "j90": ["..."]}}}}""",
+}
+
+
+def _clean_str_list(value, max_items: int, max_len: int = 400) -> list:
+    out = []
+    if isinstance(value, list):
+        for v in value:
+            s = re.sub(r"\s+", " ", str(v or "")).strip()
+            if s:
+                out.append(s[:max_len])
+            if len(out) >= max_items:
+                break
+    return out
+
+
+def _parse_deliverables(raw: str) -> "dict | None":
+    """Tolerant, section-by-section validation of the V4 pro deliverables JSON.
+    A broken section never kills the valid ones."""
+    data = _parse_json_object(raw)
+    if not data:
+        return None
+    out = {"pourquoi_cites": [], "actions_contenu": [], "faq": [], "roadmap": {}}
+    out["pourquoi_cites"] = _clean_str_list(data.get("pourquoi_cites"), 4)
+    ac = data.get("actions_contenu")
+    if isinstance(ac, list):
+        for a in ac[:3]:
+            if not isinstance(a, dict):
+                continue
+            titre = re.sub(r"\s+", " ", str(a.get("titre") or "")).strip()[:150]
+            angle = re.sub(r"\s+", " ", str(a.get("angle") or "")).strip()[:500]
+            if titre and angle:
+                out["actions_contenu"].append({"titre": titre, "angle": angle})
+    faq = data.get("faq")
+    if isinstance(faq, list):
+        for f in faq[:8]:
+            if not isinstance(f, dict):
+                continue
+            q = re.sub(r"\s+", " ", str(f.get("q") or "")).strip()[:200]
+            r = re.sub(r"\s+", " ", str(f.get("r") or "")).strip()[:600]
+            if q and r:
+                out["faq"].append({"q": q, "r": r})
+    rm = data.get("roadmap")
+    if isinstance(rm, dict):
+        for key in ("j30", "j60", "j90"):
+            items = _clean_str_list(rm.get(key), 5)
+            if items:
+                out["roadmap"][key] = items
+    if not any([out["pourquoi_cites"], out["actions_contenu"], out["faq"], out["roadmap"]]):
+        return None
+    return out
+
+
+def build_faq_jsonld(faq: list) -> str:
+    """FAQPage JSON-LD built by code from the written FAQ — valid by construction."""
+    data = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {"@type": "Question", "name": f["q"],
+             "acceptedAnswer": {"@type": "Answer", "text": f["r"]}}
+            for f in (faq or []) if f.get("q") and f.get("r")
+        ],
+    }
+    return json.dumps(data, ensure_ascii=False, indent=2) if data["mainEntity"] else ""
+
+
+_ROADMAP_FALLBACK = {
+    "fr": {
+        "j30_head": "Publiez la FAQ fournie et son bloc JSON-LD sur votre page d'accueil",
+        "j60_head": "Créez les contenus prioritaires du plan d'action (un par semaine)",
+        "j90_head": "Inscrivez-vous sur les plateformes et annuaires listés dans ce rapport",
+        "j90_measure": "Relancez votre re-scan gratuit CiteScan (lien dans l'email de livraison) pour mesurer vos progrès",
+    },
+    "en": {
+        "j30_head": "Publish the provided FAQ and its JSON-LD block on your homepage",
+        "j60_head": "Create the priority content pieces from the action plan (one per week)",
+        "j90_head": "Register on the platforms and directories listed in this report",
+        "j90_measure": "Re-run your free CiteScan re-scan (link in the delivery email) to measure your progress",
+    },
+}
+
+
+def fallback_roadmap(action_plan: list, lang: str) -> dict:
+    """Deterministic 30/60/90 roadmap from the rule-based plan when V4 pro is
+    unavailable — the report never ships without a roadmap."""
+    T = _ROADMAP_FALLBACK[lang if lang in _ROADMAP_FALLBACK else "en"]
+    quick, deep = [], []
+    for a in (action_plan or []):
+        txt = a.get("action", "")
+        (quick if a.get("effort", 5) <= 3 else deep).append(txt)
+    roadmap = {
+        "j30": (quick[:2] + [T["j30_head"]])[:4],
+        "j60": (deep[:2] + [T["j60_head"]])[:4],
+        "j90": [T["j90_head"], T["j90_measure"]],
+    }
+    return roadmap
+
+
+async def generate_deliverables(audit_data: dict, signals: dict, comp_pages: list,
+                                cms: dict, lang: str) -> dict:
+    """One V4 pro call -> pourquoi_cites + 3 titled content actions + FAQ +
+    roadmap. Never raises; per-section fallbacks keep the report complete."""
+    lang = lang if lang in _DELIVERABLES_USER else "en"
+    citations = audit_data.get("citations") or {}
+    result = {"pourquoi_cites": [], "actions_contenu": [], "faq": [],
+              "faq_jsonld": "", "roadmap": {}, "roadmap_source": "fallback",
+              "competitor_pages": comp_pages, "writer": "fallback"}
+
+    verbatims = "\n".join(
+        f"- « {q.get('verbatim')} »" for q in (citations.get("queries") or [])
+        if q.get("verbatim")
+    )[:2500] or ("aucun" if lang == "fr" else "none")
+    comps = ", ".join(f"{c['domain']} ({c['count']})"
+                      for c in (citations.get("competitors") or [])[:8]) or \
+        ("aucun" if lang == "fr" else "none")
+    pages_txt = "\n\n".join(
+        f"[{p['domain']}] {p['url']}\nTitre: {p['title']}\nTitres de sections: {p['headings']}\nExtrait: {p['text']}"
+        for p in (comp_pages or [])[:3]
+    )[:3500] or ("aucune page concurrente récupérable" if lang == "fr"
+                 else "no competitor page could be fetched")
+    weaknesses = "; ".join(
+        c.get("detail", "") for c in
+        ((audit_data.get("technical") or {}).get("checks") or {}).values()
+        if c.get("status") in ("warn", "fail")
+    )[:900] or ("aucun point faible majeur" if lang == "fr" else "no major weakness")
+
+    parsed = None
+    if OPENROUTER_API_KEY:
+        user = _DELIVERABLES_USER[lang].format(
+            domain=audit_data.get("domain", ""), keyword=audit_data.get("keyword", ""),
+            c_title=signals.get("title", ""), c_h1=signals.get("h1", ""),
+            c_desc=signals.get("desc", ""), c_text=signals.get("text", "")[:800],
+            weaknesses=weaknesses, comps=comps, verbatims=verbatims,
+            comp_pages=pages_txt, cms=cms.get("label", "?"))
+        timeout = httpx.Timeout(120.0)
+        for _ in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    r = await client.post(OPENROUTER_URL, json={
+                        "model": WRITER_MODEL,
+                        "messages": [{"role": "system", "content": _WRITER_SYSTEM[lang]},
+                                     {"role": "user", "content": user}],
+                        "temperature": 0.3,
+                        "max_tokens": 6000,
+                        "response_format": {"type": "json_object"},
+                        "reasoning": {"exclude": True},
+                    }, headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                                "Content-Type": "application/json",
+                                "HTTP-Referer": "https://citescan.brozapi.com",
+                                "X-Title": "CiteScan deliverables"})
+                if r.status_code != 200:
+                    continue
+                payload = r.json()
+                _meter_openrouter(payload)
+                content = payload["choices"][0]["message"].get("content")
+                if not content:
+                    continue
+                parsed = _parse_deliverables(content)
+                if parsed:
+                    break
+            except Exception:
+                continue
+
+    if parsed:
+        result.update({k: v for k, v in parsed.items() if v})
+        result["writer"] = WRITER_MODEL
+    result["faq_jsonld"] = build_faq_jsonld(result["faq"])
+    if result["roadmap"]:
+        result["roadmap_source"] = "v4-pro"
+    else:
+        result["roadmap"] = fallback_roadmap(audit_data.get("action_plan"), lang)
+    return result
+
+
 # ---------------------------------------------------------------- orchestration
 
 async def run_paid_audit(url: str, lang: str = "en") -> dict:
     """Full paid-audit pipeline. Never raises; degraded sections are explicit."""
+    _meter_reset()
     parsed = urlparse(url if url.startswith("http") else f"https://{url}")
     domain = f"https://{parsed.netloc.lower()}"
 
@@ -1009,6 +1522,8 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
     else:
         technical = technical_audit(html, robots_text, final_url, lang=lang)
 
+    signals = extract_page_signals(html) if html else \
+        {"title": "", "h1": "", "desc": "", "jsonld": "", "text": ""}
     if html:
         sector_info = await detect_sector(html, domain, lang)
     else:
@@ -1019,6 +1534,20 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
     score = compute_score(technical, citations)
     plan = build_action_plan(technical, citations, lang) if not fetch_error else []
 
+    # Rapport niveau 2 (t_a857e039) : CMS détecté, plateformes où les
+    # concurrents sont présents, fetch des pages concurrentes citées et
+    # livrables clé en main (pourquoi cités, 3 contenus titre+angle, FAQ +
+    # JSON-LD, roadmap 30/60/90).
+    cms = detect_cms(html, lang) if html else \
+        {"cms": "unknown", "label": "-", "instruction": ""}
+    target_host = _host_of(domain)
+    comp_hosts = [c["domain"] for c in (citations.get("competitors") or [])]
+    platforms = extract_platforms(comp_hosts, target_host)
+    comp_pages = []
+    if citations.get("status") in ("ok", "partial") and comp_hosts:
+        comp_pages = await fetch_competitor_pages(
+            citations["competitors"], citations.get("competitor_urls") or {})
+
     result = {
         "domain": domain,
         "lang": lang,
@@ -1028,10 +1557,15 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         "technical": technical,
         "citations": citations,
         "action_plan": plan,
+        "cms": cms,
+        "platforms": platforms,
         "mode": score["mode"],
         "perplexity_available": bool(PERPLEXITY_API_KEY),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+
+    result["deliverables"] = await generate_deliverables(
+        result, signals, comp_pages, cms, lang)
 
     # Rédaction client par V4 pro (synthèse + plan d'action), langue du parcours.
     # Fallback explicite sur le plan issu de la bibliothèque si indisponible.
@@ -1044,4 +1578,15 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
     else:
         result["synthese"] = None
         result["writer"] = "fallback-library" if OPENROUTER_API_KEY else "no-openrouter-key"
+
+    # Garde-fou budget (t_a857e039) : coût total mesuré par audit.
+    or_cost = round(_OR_METER["cost"], 5)
+    sonar_cost = round(citations.get("cost_usd", 0.0) or 0.0, 5)
+    result["cost_usd"] = {
+        "citations": sonar_cost,
+        "openrouter": or_cost,
+        "openrouter_calls": _OR_METER["calls"],
+        "total": round(sonar_cost + or_cost, 5),
+        "budget_max": 0.50,
+    }
     return result

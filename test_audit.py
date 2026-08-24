@@ -251,5 +251,125 @@ finally:
     audit.asyncio.sleep = _orig_sleep
 audit.PERPLEXITY_API_KEY = ""
 
+# --- Rapport niveau 2 (t_a857e039) ---
+
+# verbatim : texte de réponse conservé et nettoyé
+check("agent-api: answer text conservé", res["answer"] == "Réponse [web:1]")
+v1 = audit._verbatim("**Les meilleurs** sites sont A et B [1]. Ils dominent le marché. "
+                     "Une troisième phrase inutile.")
+check("verbatim: 2 phrases max, markdown/nettoyé",
+      v1 == "Les meilleurs sites sont A et B . Ils dominent le marché.", v1)
+v2 = audit._verbatim("mot " * 200)
+check("verbatim: cap 300 chars + ellipse", len(v2) <= 301 and v2.endswith("…"))
+check("verbatim: vide -> ''", audit._verbatim("") == "" and audit._verbatim(None) == "")
+
+# CMS detection
+cms_wp = audit.detect_cms('<html><head></head><body><link href="/wp-content/themes/x/style.css"></body></html>', "fr")
+check("cms: wordpress détecté", cms_wp["cms"] == "wordpress" and cms_wp["label"] == "WordPress")
+check("cms: instruction FR wordpress (plugin)",
+      "WPCode" in cms_wp["instruction"] or "extension" in cms_wp["instruction"])
+cms_wf = audit.detect_cms('<html><body><script src="https://assets.website-files.com/webflow.js"></script></body></html>', "en")
+check("cms: webflow détecté", cms_wf["cms"] == "webflow" and "Custom Code" in cms_wf["instruction"])
+cms_shop = audit.detect_cms('<html><body><script>Shopify.theme = {};</script></body></html>', "en")
+check("cms: shopify détecté", cms_shop["cms"] == "shopify" and "theme.liquid" in cms_shop["instruction"])
+cms_none = audit.detect_cms("<html><body><p>site statique</p></body></html>", "fr")
+check("cms: inconnu -> instruction générique",
+      cms_none["cms"] == "unknown" and "</head>" in cms_none["instruction"])
+
+# plateformes / annuaires
+plats = audit.extract_platforms(
+    ["capterra.com", "www.g2.com", "concurrent-direct.fr", "trustpilot.com", "client.fr"],
+    "client.fr")
+names = [p["name"] for p in plats]
+check("plateformes: capterra+g2+trustpilot détectés",
+      "Capterra" in names and "G2" in names and "Trustpilot" in names, str(plats))
+check("plateformes: concurrent direct et client exclus",
+      all(p["name"] not in ("",) for p in plats) and len(plats) == 3, str(plats))
+check("plateformes: vide -> []", audit.extract_platforms([], "x.fr") == [])
+
+# gap skip list
+check("gap: annuaires/media skippés",
+      audit._is_skippable_for_gap("capterra.com") and
+      audit._is_skippable_for_gap("fr.wikipedia.org") and
+      audit._is_skippable_for_gap("reddit.com"))
+check("gap: vrai concurrent NON skippé", not audit._is_skippable_for_gap("mon-concurrent.fr"))
+
+# parse deliverables (tolérant par section)
+raw_ok = json.dumps({
+    "pourquoi_cites": ["L'IA privilégie les comparatifs chiffrés.", "Les FAQ sont citées."],
+    "actions_contenu": [{"titre": "Comparatif 2026 : les 7 logiciels X", "angle": "Chiffres + tableau"},
+                        {"titre": "Guide prix X", "angle": "Transparence tarifaire"},
+                        {"titre": "  ", "angle": "sans titre -> ignoré"}],
+    "faq": [{"q": "Combien coûte X ?", "r": "Entre 10 et 50 €."},
+            {"q": "sans réponse", "r": ""}],
+    "roadmap": {"j30": ["Publier la FAQ"], "j60": ["Créer le comparatif"], "j90": ["S'inscrire sur G2"]},
+})
+pd_ok = audit._parse_deliverables(raw_ok)
+check("deliverables: parse sections complètes",
+      pd_ok is not None and len(pd_ok["pourquoi_cites"]) == 2 and
+      len(pd_ok["actions_contenu"]) == 2 and len(pd_ok["faq"]) == 1 and
+      pd_ok["roadmap"]["j90"] == ["S'inscrire sur G2"], str(pd_ok))
+check("deliverables: JSON cassé -> None", audit._parse_deliverables("nope") is None)
+check("deliverables: JSON vide de contenu -> None",
+      audit._parse_deliverables('{"pourquoi_cites": [], "faq": []}') is None)
+pd_part = audit._parse_deliverables('{"faq": [{"q": "Q ?", "r": "R."}], "roadmap": "casse"}')
+check("deliverables: section cassée n' tue pas les autres",
+      pd_part is not None and len(pd_part["faq"]) == 1 and pd_part["roadmap"] == {})
+
+# FAQ JSON-LD : valide par construction
+jl = audit.build_faq_jsonld(pd_ok["faq"])
+data_jl = json.loads(jl)
+check("faq-jsonld: JSON valide", isinstance(data_jl, dict))
+check("faq-jsonld: @type FAQPage + mainEntity",
+      data_jl["@type"] == "FAQPage" and
+      data_jl["@context"] == "https://schema.org" and
+      len(data_jl["mainEntity"]) == 1 and
+      data_jl["mainEntity"][0]["@type"] == "Question" and
+      data_jl["mainEntity"][0]["acceptedAnswer"]["@type"] == "Answer")
+check("faq-jsonld: vide -> ''", audit.build_faq_jsonld([]) == "")
+
+# roadmap fallback : jamais de rapport sans roadmap
+rm_fb = audit.fallback_roadmap([
+    {"action": "Débloquer robots.txt", "effort": 1},
+    {"action": "Créer du contenu", "effort": 7},
+], "fr")
+check("roadmap fallback: 3 phases présentes",
+      all(k in rm_fb and rm_fb[k] for k in ("j30", "j60", "j90")))
+check("roadmap fallback: quick win en J30, contenu en J60",
+      any("robots" in x for x in rm_fb["j30"]) and
+      any("contenu" in x for x in rm_fb["j60"]), str(rm_fb))
+rm_en = audit.fallback_roadmap([], "en")
+check("roadmap fallback EN: 3 phases même sans plan",
+      all(rm_en[k] for k in ("j30", "j60", "j90")))
+
+# generate_deliverables sans clé OpenRouter : fallbacks complets, jamais d'exception
+_old_or = audit.OPENROUTER_API_KEY
+audit.OPENROUTER_API_KEY = ""
+gd = asyncio.run(audit.generate_deliverables(
+    {"domain": "https://x.fr", "keyword": "test secteur",
+     "citations": {"queries": [{"verbatim": "v"}], "competitors": []},
+     "technical": {"checks": {}}, "action_plan": [{"action": "a", "effort": 1}]},
+    {"title": "", "h1": "", "desc": "", "text": ""}, [],
+    {"label": "WordPress"}, "fr"))
+check("deliverables sans clé: roadmap fallback présente",
+      gd["roadmap_source"] == "fallback" and gd["roadmap"]["j30"], str(gd["roadmap"]))
+check("deliverables sans clé: faq vide explicite, writer=fallback",
+      gd["faq"] == [] and gd["faq_jsonld"] == "" and gd["writer"] == "fallback")
+audit.OPENROUTER_API_KEY = _old_or
+
+# run_paid_audit injoignable : nouveaux champs présents, coût mesuré
+_old_or, _old_px = audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY
+audit.OPENROUTER_API_KEY = ""
+audit.PERPLEXITY_API_KEY = ""
+r2 = asyncio.run(audit.run_paid_audit("https://inaccessible-zzz.invalid", lang="fr"))
+check("run_paid_audit: champs niveau 2 présents",
+      "cms" in r2 and "platforms" in r2 and "deliverables" in r2, str(list(r2)))
+check("run_paid_audit: cost_usd mesuré avec budget_max",
+      isinstance((r2.get("cost_usd") or {}).get("total"), float) and
+      r2["cost_usd"]["budget_max"] == 0.50, str(r2.get("cost_usd")))
+check("run_paid_audit: roadmap présente même injoignable",
+      bool((r2.get("deliverables") or {}).get("roadmap", {}).get("j30")))
+audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY = _old_or, _old_px
+
 print(f"\nUNIT: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)

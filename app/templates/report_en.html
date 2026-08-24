@@ -52,6 +52,25 @@
   .cited-no { color: var(--fail); font-weight: 700; }
   .notice { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
             padding: 12px 16px; font-size: .9rem; }
+  .top3 { background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 12px; padding: 18px 22px; }
+  .top3 ol { margin: 8px 0 0; padding-left: 22px; }
+  .top3 li { margin: 8px 0; }
+  .phase { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--violet);
+           border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+  .phase h3 { margin-top: 0; color: var(--violet); }
+  .phase ul { margin: 6px 0 0; padding-left: 20px; }
+  .deliv { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+           padding: 14px 18px; margin: 12px 0; }
+  .verbatim { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--emeraude);
+              border-radius: 8px; padding: 12px 18px; margin: 10px 0; }
+  .verbatim .q { font-weight: 700; }
+  .verbatim blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--border);
+                         color: #334155; font-style: italic; }
+  pre.code { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 14px 16px;
+             overflow-x: auto; font-size: .8rem; line-height: 1.45; white-space: pre-wrap;
+             word-break: break-word; }
+  .annexe { color: var(--muted); font-size: .85rem; text-transform: uppercase;
+            letter-spacing: 1px; margin-top: 3rem; }
   footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
            color: var(--muted); font-size: .82rem; }
   @page { size: A4; margin: 18mm 14mm; }
@@ -59,7 +78,7 @@
     body { background: #fff; }
     header.band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     h2 { page-break-after: avoid; }
-    .check, .action, table { page-break-inside: avoid; }
+    .check, .action, .phase, .deliv, .verbatim, table { page-break-inside: avoid; }
   }
 </style>
 </head>
@@ -89,7 +108,7 @@
 
   {% if mode == "degraded" %}
   <p class="notice">⚠ <strong>Degraded-mode report</strong>: Perplexity citation detection was
-  unavailable at generation time ({{ citations_reason }}). The score is based on the technical
+  unavailable at generation time ({{ citations_reason }}). The score relies on the technical
   audit only. Contact us for a free full regeneration.</p>
   {% endif %}
 
@@ -103,19 +122,136 @@
   <p>{{ synthese }}</p>
   {% endif %}
 
-  <h2>1. Detailed technical audit</h2>
-  <p>These four checks verify that AI crawlers can read and understand your site.</p>
+  {% if top_actions %}
+  <h2>Your top 3 priority actions</h2>
+  <div class="top3">
+    <ol>
+    {% for a in top_actions %}
+      <li>{{ a.action }} <span class="impact">(impact {{ a.impact }}/10 · effort {{ a.effort }}/10)</span></li>
+    {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  {% if roadmap %}
+  <h2>30 / 60 / 90-day roadmap</h2>
+  {% if roadmap.j30 %}
+  <div class="phase">
+    <h3>First 30 days — the foundations</h3>
+    <ul>{% for item in roadmap.j30 %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if roadmap.j60 %}
+  <div class="phase">
+    <h3>Days 30 to 60 — content that gets cited</h3>
+    <ul>{% for item in roadmap.j60 %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if roadmap.j90 %}
+  <div class="phase">
+    <h3>Days 60 to 90 — authority and measurement</h3>
+    <ul>{% for item in roadmap.j90 %}<li>{{ item }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if actions_contenu %}
+  <h2>3 content pieces to create (titles and angles provided)</h2>
+  <p>The competitor pages the AI cites have been analyzed. Here are the content pieces
+  that will close the gap — each with its exact title and angle.</p>
+  {% for a in actions_contenu %}
+  <div class="deliv">
+    <h3>📝 "{{ a.titre }}"</h3>
+    <p><strong>Angle:</strong> {{ a.angle }}</p>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if faq %}
+  <h2>Your ready-to-publish FAQ</h2>
+  <p>The questions a buyer in your sector asks before paying — answers written, ready to
+  copy-paste onto your site. Publish it, then paste the JSON-LD block below: it is exactly
+  the format AIs read best.</p>
+  {% for f in faq %}
+  <div class="deliv">
+    <h3>{{ f.q }}</h3>
+    <p>{{ f.r }}</p>
+  </div>
+  {% endfor %}
+
+  {% if faq_jsonld %}
+  <h3>FAQPage JSON-LD block to copy-paste</h3>
+  {% if cms_instruction %}<p>{{ cms_instruction }}</p>{% endif %}
+  <pre class="code">&lt;script type="application/ld+json"&gt;
+{{ faq_jsonld }}
+&lt;/script&gt;</pre>
+  {% endif %}
+  {% endif %}
+
+  {% if platforms %}
+  <h2>Platforms and directories where your competitors are listed (and you are not)</h2>
+  <p>The AI cites these platforms in your sector. Each listing is one more door to being
+  cited — most of them are free.</p>
+  <table>
+    <tr><th>Platform</th><th>Cited domain</th></tr>
+    {% for p in platforms %}
+    <tr><td>{{ p.name }}</td><td>{{ p.domain }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if rescan_url %}
+  <h2>Measure your progress in 30 days — free</h2>
+  <p>Your free re-scan link (no account) becomes active on
+  <strong>{{ rescan_date }}</strong>: <a href="{{ rescan_url }}">{{ rescan_url }}</a><br>
+  It re-runs a full audit and compares your new score with today's.
+  This link is also in the delivery email.</p>
+  {% endif %}
+
+  <p class="annexe">— Appendix: the detailed measurements —</p>
+
+  {% if pourquoi_cites %}
+  <h2>Why your competitors get cited</h2>
+  {% for p in pourquoi_cites %}<p>• {{ p }}</p>{% endfor %}
+  {% endif %}
+
+  {% if citations_status in ("ok", "partial") %}
+  <h2>What the AI actually answers (verbatims)</h2>
+  <p>We asked Perplexity <strong>{{ citations_total }} buyer-intent questions</strong> in your
+  sector: your site is cited in <strong>{{ cited_count }} answer(s) out of
+  {{ citations_total }}</strong>. For each question, here is Perplexity's real answer (excerpt)
+  and who it cites — this is what your potential customers read today.</p>
+  {% if citations_status == "partial" %}
+  <p class="notice">⚠ Some queries failed (API limit): partial results.</p>
+  {% endif %}
+  {% for q in queries %}
+  <div class="verbatim">
+    <div class="q">{{ q.query }}</div>
+    {% if q.error %}
+    <p class="cited-no">Query failed — not counted.</p>
+    {% else %}
+    {% if q.verbatim %}<blockquote>"{{ q.verbatim }}"</blockquote>{% endif %}
+    <p>{% if q.cited %}<span class="cited-yes">✓ Your site is cited in this answer.</span>
+    {% else %}<span class="cited-no">✗ Your site is not cited.</span>{% endif %}
+    {% if q.citations %}<br>Cited instead of you: {{ q.citations | join(", ") }}{% endif %}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <h2>Detailed technical audit</h2>
+  <p>These four checks verify that AI bots can read and understand your site.</p>
 
   {% for c in checks %}
   <div class="check {{ c.status }}">
-    <h3><span class="chip {{ c.status }}">{{ "OK" if c.status == "pass" else ("Improve" if c.status == "warn" else "Issue") }}</span>
+    <h3><span class="chip {{ c.status }}">{{ "OK" if c.status == "pass" else ("Improve" if c.status == "warn" else "Problem") }}</span>
       {{ c.label }} <span class="pts">— {{ c.points }}/{{ c.max }} points</span></h3>
     <p>{{ c.detail }}</p>
     {% if c.bots %}
     <table>
       <tr><th>AI bot</th><th>Status</th></tr>
       {% for bot, st in c.bots.items() %}
-      <tr><td>{{ bot }}</td><td>{{ "blocked" if st == "blocked" else ("allowed" if st == "allowed" else "not in file") }}</td></tr>
+      <tr><td>{{ bot }}</td><td>{{ "blocked" if st == "blocked" else ("allowed" if st == "allowed" else "absent from file") }}</td></tr>
       {% endfor %}
     </table>
     {% endif %}
@@ -125,14 +261,8 @@
   </div>
   {% endfor %}
 
-  <h2>2. Real citation detection (Perplexity)</h2>
+  <h2>Detail of the {{ citations_total }} tested queries</h2>
   {% if citations_status in ("ok", "partial") %}
-  <p>We asked Perplexity (Sonar model) <strong>{{ citations_total }} buyer-intent questions</strong>
-  in your sector. Your site is cited in
-  <strong>{{ cited_count }} answer(s) out of {{ citations_total }}</strong>.</p>
-  {% if citations_status == "partial" %}
-  <p class="notice">⚠ Some queries failed (API limit): partial results.</p>
-  {% endif %}
   <table>
     <tr><th>Tested query</th><th>Your site cited?</th><th>Cited competitors</th></tr>
     {% for q in queries %}
@@ -156,31 +286,29 @@
   <p class="notice">Citation detection unavailable: {{ citations_reason }}.</p>
   {% endif %}
 
-  <h2>3. Prioritized action plan</h2>
   {% if action_plan %}
-  <p>Actions ranked by impact/effort ratio. Start with priority 1.</p>
+  <h2>Full action plan (recap)</h2>
   {% for a in action_plan %}
   <div class="action">
     <span class="rank">{{ a.rank }}</span> {{ a.action }}
     <div class="impact">Impact: {{ a.impact }}/10 · Effort: {{ a.effort }}/10</div>
   </div>
   {% endfor %}
-  {% else %}
-  <p>No priority action detected — your site already shows good AI visibility signals.</p>
   {% endif %}
 
-  <h2>4. Methodology and limitations</h2>
-  <p>This audit combines: (1) a fully automated technical analysis of your homepage and
-  robots.txt; (2) 15 real queries asked to Perplexity Sonar in your site's language,
-  generated from your analyzed sector ("{{ keyword }}"). Citations in AI answers vary over
-  time and across users: this report is a snapshot at generation date, not a guarantee of
-  future citations.</p>
+  <h2>Methodology and limits</h2>
+  <p>This audit combines: (1) a 100% automated technical analysis of your homepage and
+  robots.txt; (2) {{ citations_total or 15 }} real queries asked to Perplexity Sonar in your site's
+  language, generated from your analyzed sector ("{{ keyword }}"); (3) an automated
+  comparison with the competitor pages the AI cites. Citations in AI answers vary over
+  time and across users: this report is a snapshot at generation date, not a guarantee
+  of future citations.</p>
 
   <footer>
     <p><strong>CiteScan</strong> by Brozapi — contact@brozapi.com — https://citescan.brozapi.com<br>
     7-day money-back guarantee: simply reply to the delivery email.<br>
-    CiteScan is a technical audit assisting AI search optimization. It is neither legal advice
-    nor a traffic guarantee. © {{ year }} Brozapi.</p>
+    CiteScan is a technical audit that helps with AI search optimization. It is neither legal
+    advice nor a traffic guarantee. © {{ year }} Brozapi.</p>
   </footer>
 </div>
 </body>
