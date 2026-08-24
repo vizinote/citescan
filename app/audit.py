@@ -534,8 +534,13 @@ def _clean_sector(value: str) -> str:
     return s
 
 
-async def _openrouter_json(system: str, user: str, max_tokens: int = 400) -> "dict | None":
-    """One OpenRouter call expecting a JSON object back. None on any failure."""
+async def _openrouter_json(system: str, user: str, max_tokens: int = 2500) -> "dict | None":
+    """One OpenRouter call expecting a JSON object back. None on any failure.
+
+    deepseek-v4-pro est un modèle à raisonnement : sans 'reasoning.exclude' il
+    peut brûler tout le budget de tokens en raisonnement interne et renvoyer
+    content=null (finish_reason='length') — constaté en prod le 2026-08-24 avec
+    max_tokens=400. D'où exclude + budget large + garde sur content vide."""
     if not OPENROUTER_API_KEY:
         return None
     timeout = httpx.Timeout(60.0)
@@ -549,13 +554,17 @@ async def _openrouter_json(system: str, user: str, max_tokens: int = 400) -> "di
                     "temperature": 0.2,
                     "max_tokens": max_tokens,
                     "response_format": {"type": "json_object"},
+                    "reasoning": {"exclude": True},
                 }, headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}",
                             "Content-Type": "application/json",
                             "HTTP-Referer": "https://citescan.brozapi.com",
                             "X-Title": "CiteScan sector detection"})
             if r.status_code != 200:
                 continue
-            parsed = _parse_json_object(r.json()["choices"][0]["message"]["content"])
+            content = r.json()["choices"][0]["message"].get("content")
+            if not content:
+                continue
+            parsed = _parse_json_object(content)
             if parsed is not None:
                 return parsed
         except Exception:
@@ -872,13 +881,16 @@ async def write_client_report(audit_data: dict, lang: str) -> "dict | None":
                     "temperature": 0.3,
                     "max_tokens": 1800,
                     "response_format": {"type": "json_object"},
+                    "reasoning": {"exclude": True},
                 }, headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}",
                             "Content-Type": "application/json",
                             "HTTP-Referer": "https://citescan.brozapi.com",
                             "X-Title": "CiteScan report writer"})
             if r.status_code != 200:
                 continue
-            content = r.json()["choices"][0]["message"]["content"]
+            content = r.json()["choices"][0]["message"].get("content")
+            if not content:
+                continue
             parsed = _parse_writer_output(content)
             if parsed:
                 return parsed
