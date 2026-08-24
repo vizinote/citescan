@@ -125,5 +125,113 @@ try:
 finally:
     os.unlink(js_path)
 
+# ------------------------------------------------- exécution réelle du checkout
+# t_96c4f606 : pour CHAQUE combinaison, le bon Payment Link doit être choisi
+# et le client_reference_id doit transporter "<domaine>|<langue>|<moteurs csv>".
+# Liens canoniques créés par la carte Stripe t_6808ea76 (INACTIFS, verrou n°3).
+CANONICAL_LINKS = {
+    29: "https://buy.stripe.com/aFa7sF3gB90F7tN33fcZa09",
+    39: "https://buy.stripe.com/9B69AN6sN3Gl4hBbzLcZa0a",
+    49: "https://buy.stripe.com/bJe00d8AV2Ch8xRcDPcZa0b",
+}
+
+def _checkout_script(html: str) -> str:
+    """Le bloc <script> COMMENTÉ (verrou) contenant STRIPE_PAYMENT_LINKS."""
+    m = re.search(r"<!--.*?<script>(.*?STRIPE_PAYMENT_LINKS.*?)</script>.*?-->",
+                  html, flags=re.S)
+    return m.group(1) if m else ""
+
+_CHECKOUT_HARNESS = r"""
+const state = {chatgpt: false, claude: false};
+const extras = ["chatgpt", "claude"].map(v => ({
+  value: v,
+  get checked() { return state[v]; },
+  addEventListener() {},
+}));
+const priceEl = {textContent: ""};
+const btnEl = {textContent: ""};
+const domainEl = {value: "https://www.exemple-site.fr/landing?x=1"};
+const alerts = [];
+const document = {
+  querySelectorAll(sel) {
+    if (sel === ".eng-extra") return extras;
+    if (sel === ".eng-extra:checked") return extras.filter(x => x.checked);
+    return [];
+  },
+  getElementById(id) {
+    if (id === "offer-price") return priceEl;
+    if (id === "order-btn") return btnEl;
+    if (id === "order-domain") return domainEl;
+    return null;
+  },
+};
+const window = {location: {href: ""}};
+function alert(msg) { alerts.push(msg); }
+__LIVE_SCRIPT__
+__CHECKOUT_SCRIPT__
+const combos = [
+  [{}, 29, ["perplexity", "gemini"]],
+  [{chatgpt: true}, 39, ["perplexity", "gemini", "chatgpt"]],
+  [{claude: true}, 39, ["perplexity", "gemini", "claude"]],
+  [{chatgpt: true, claude: true}, 49, ["perplexity", "gemini", "chatgpt", "claude"]],
+];
+const out = [];
+for (const [on, price, engines] of combos) {
+  state.chatgpt = !!on.chatgpt; state.claude = !!on.claude;
+  window.location.href = ""; alerts.length = 0;
+  const ret = citescanCheckout({preventDefault() {}}, __LANG__);
+  out.push({price, engines, ret,
+            href: window.location.href, alerts: alerts.slice(),
+            expectedBase: STRIPE_PAYMENT_LINKS[price],
+            expectedRef: "www.exemple-site.fr|" + __LANG__ + "|" + engines.join(",")});
+}
+// Domaine invalide : alerte, aucune redirection.
+window.location.href = ""; alerts.length = 0;
+domainEl.value = "https://localhost";
+const retBad = citescanCheckout({preventDefault() {}}, __LANG__);
+out.push({invalid: true, ret: retBad, href: window.location.href,
+          alerted: alerts.length > 0});
+console.log(JSON.stringify(out));
+"""
+
+from urllib.parse import unquote
+
+for lang, path in PAGES.items():
+    html = open(path, encoding="utf-8").read()
+    live = _live_script(html)
+    checkout = _checkout_script(html)
+    check(f"{lang}: bloc checkout extrait (commenté, verrou intact)",
+          "STRIPE_PAYMENT_LINKS" in checkout and "citescanCheckout" in checkout)
+    # La langue propagée au checkout est celle de la page (attribut onsubmit).
+    check(f"{lang}: onsubmit propage la langue '{lang}'",
+          f"citescanCheckout(event, '{lang}')" in html)
+    js = (_CHECKOUT_HARNESS
+          .replace("__LIVE_SCRIPT__", live)
+          .replace("__CHECKOUT_SCRIPT__", checkout)
+          .replace("__LANG__", json.dumps(lang)))
+    js_path = os.path.join(ROOT, f".tmp_checkout_test_{lang}.js")
+    with open(js_path, "w", encoding="utf-8") as f:
+        f.write(js)
+    try:
+        proc = subprocess.run(["node", js_path], capture_output=True, text=True, timeout=30)
+        check(f"{lang}: node exécute le checkout sans erreur",
+              proc.returncode == 0, proc.stderr[:300])
+        results = json.loads(proc.stdout)
+        for r in results:
+            if r.get("invalid"):
+                check(f"{lang}: domaine invalide bloqué (alerte, pas de redirection)",
+                      r["ret"] is False and r["href"] == "" and r["alerted"], str(r))
+                continue
+            base, _, query = r["href"].partition("?")
+            ref = unquote(query.split("client_reference_id=")[-1])
+            check(f"{lang}: lien Stripe du palier {r['price']} EUR ({','.join(r['engines'])})",
+                  base == CANONICAL_LINKS[r["price"]] and base == r["expectedBase"], str(r))
+            check(f"{lang}: client_reference_id correct ({r['price']} EUR)",
+                  ref == r["expectedRef"], f"ref={ref!r}")
+            check(f"{lang}: checkout retourne false (pas de soumission native)",
+                  r["ret"] is False, str(r))
+    finally:
+        os.unlink(js_path)
+
 print(f"\nFRONTEND: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)
