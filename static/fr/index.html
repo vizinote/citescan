@@ -39,6 +39,7 @@
     <input id="url-input" type="text" inputmode="url" autocomplete="url" spellcheck="false" data-i18n-placeholder="scan_placeholder" placeholder="https://votresite.fr" required>
     <button type="submit" data-i18n="scan_button">Scanner mon site</button>
   </form>
+  <p class="hero-offer"><a href="/offre.html" data-i18n="hero_offer_link">Voir l'audit complet — dès 29 €</a></p>
   <div id="result" hidden>
     <div class="score-box">
       <div class="score-num"><span id="score">—</span><span class="out-of" data-i18n="score_out_of">/100</span></div>
@@ -47,10 +48,11 @@
     <h3 data-i18n="examples_title">Ce que nous avons trouvé</h3>
     <ul id="findings"></ul>
     <div class="offer">
+      <p class="offer-note" data-i18n="offer_note">Le scan gratuit vérifie 4 contrôles techniques. L'audit complet teste vos citations réelles sur 15 questions par IA, avec plan d'action.</p>
       <h2 data-i18n="offer_title">Recevoir l'audit complet + plan d'action</h2>
       <p class="price" data-i18n="offer_price">29 €</p>
       <p class="sub" data-i18n="offer_sub">paiement unique, livré en 24 h, garantie satisfait/remboursé 7 j</p>
-      <a class="cta" href="#" data-i18n="offer_cta">Acheter l'audit complet</a>
+      <a class="cta" href="/offre.html" data-i18n="offer_cta">Acheter l'audit complet</a>
     </div>
   </div>
   <p id="error" hidden></p>
@@ -58,6 +60,7 @@
 <footer>
   <span>CiteScan — Brozapi</span>
   <a href="/static/mentions-legales.html" data-i18n="footer_legal">Mentions légales</a>
+  <a href="/offre.html" data-i18n="footer_offer">Audit complet &amp; tarifs</a>
   <p class="footer-tools">Les autres outils Brozapi :
     <a href="https://badgeia.brozapi.com/" target="_blank" rel="noopener">BadgeIA</a>, le badge de transparence AI Act (39&nbsp;€) ·
     <a href="https://accessicheck.brozapi.com/" target="_blank" rel="noopener">AccessiCheck</a>, l’audit d’accessibilité RGAA/WCAG (dès 29&nbsp;€)

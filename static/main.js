@@ -92,8 +92,8 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
       ul.appendChild(li);
     }
     res.hidden = false;
-    const cta = document.querySelector('.cta');
-    cta.href = '#';
+    const cta = document.querySelector('#result .cta');
+    cta.href = Lang === 'fr' ? '/offre.html' : '/en/offer.html';
   } catch {
     err.textContent = t.form_error_network || 'Network error';
     err.hidden = false;
