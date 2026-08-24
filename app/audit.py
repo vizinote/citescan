@@ -1270,6 +1270,84 @@ def detect_cms(html: str, lang: str = "en") -> dict:
     return {"cms": key, "label": label, "instruction": instr[key]}
 
 
+# ---------------------------------------------------------------- ecosystem signals (t_a351f0cd)
+#
+# Signaux RÉELS extraits du HTML de la page auditée, utilisés UNIQUEMENT pour
+# la section conditionnelle « Aller plus loin » du rapport (passerelle BadgeIA
+# / AccessiCheck). Règle zéro dark pattern : aucun signal inventé, aucune
+# mention si le signal n'est pas présent dans les données.
+
+# Widgets de chat conversationnel reconnus (signature = fragment présent dans
+# le HTML brut : src de script, variable JS, iframe). Liste documentée —
+# ajouter une entrée = un vendeur réellement identifiable.
+_CHAT_WIDGET_SIGNATURES = [
+    ("intercom", "Intercom",
+     ["intercom.io", "intercomcdn.com", "intercomsettings", "window.intercom"]),
+    ("crisp", "Crisp",
+     ["crisp.chat", "crisp-client", "$crisp"]),
+    ("tidio", "Tidio",
+     ["tidio.co", "tidiochat"]),
+    ("chatbase", "Chatbase",
+     ["chatbase.co"]),
+    ("drift", "Drift",
+     ["drift.com", "driftt.com", "driftframe"]),
+    ("chatwoot", "Chatwoot",
+     ["chatwoot"]),
+    ("zendesk_chat", "Zendesk Chat",
+     ["zopim", "static.zdassets.com", "zendesk.com/embeddable"]),
+]
+
+
+def detect_chat_widgets(html: str) -> list:
+    """Conversational chat widgets actually present on the page (deterministic,
+    0 LLM call). Returns [{"key", "label"}]. A generic chatbot script whose
+    vendor is unknown is reported as 'chatbot_generic'."""
+    h = (html or "").lower()
+    found = []
+    for key, label, needles in _CHAT_WIDGET_SIGNATURES:
+        if any(n in h for n in needles):
+            found.append({"key": key, "label": label})
+    if not found:
+        # Repli générique borné : un script/iframe dont l'URL contient
+        # « chatbot » (jamais le texte visible — un article qui PARLE de
+        # chatbots n'est pas un widget).
+        for m in re.finditer(
+                r'<(?:script|iframe)[^>]+src=["\']([^"\']+)["\']', h):
+            if "chatbot" in m.group(1) or "chat-widget" in m.group(1):
+                # label=None -> wording localisé au rendu (report.py)
+                found.append({"key": "chatbot_generic", "label": None})
+                break
+    return found
+
+
+def accessibility_signals(html: str) -> dict:
+    """Basic honest accessibility signals from the raw HTML (deterministic) :
+    images without an alt attribute, missing lang attribute on <html>.
+    weak=True si les signaux sont faibles :
+      - 3 images ou plus sans attribut alt, ou
+      - attribut lang absent ET au moins une image sans alt.
+    Une image avec alt="" (décorative) compte comme conforme."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    imgs = soup.find_all("img")
+    no_alt = [i for i in imgs if not i.has_attr("alt")]
+    html_tag = soup.find("html")
+    has_lang = bool(html_tag and html_tag.get("lang"))
+    weak = len(no_alt) >= 3 or (not has_lang and len(no_alt) >= 1)
+    return {"images_total": len(imgs), "images_missing_alt": len(no_alt),
+            "html_lang": has_lang, "weak": weak}
+
+
+def ecosystem_signals(html: str) -> dict:
+    """Bundle des signaux écosystème pour la passerelle commerciale honnête."""
+    return {"chat_widgets": detect_chat_widgets(html),
+            "accessibility": accessibility_signals(html)}
+
+
+_ECOSYSTEM_EMPTY = {"chat_widgets": [],
+                    "accessibility": {"images_total": 0, "images_missing_alt": 0,
+                                      "html_lang": True, "weak": False}}
+
+
 # ---------------------------------------------------------------- platforms / directories (rapport niveau 2)
 #
 # Annuaires et plateformes où les domaines cités par l'IA sont présents — et
@@ -1696,6 +1774,11 @@ async def run_paid_audit(url: str, lang: str = "en",
     # JSON-LD, roadmap 30/60/90).
     cms = detect_cms(html, lang) if html else \
         {"cms": "unknown", "label": "-", "instruction": ""}
+    # Signaux écosystème honnêtes (t_a351f0cd) : widgets de chat et signaux
+    # d'accessibilité réellement présents dans le HTML — alimentent la section
+    # conditionnelle « Aller plus loin » du rapport. Site inaccessible = aucun
+    # signal = aucune section.
+    ecosystem = ecosystem_signals(html) if html else dict(_ECOSYSTEM_EMPTY)
     target_host = _host_of(domain)
     comp_hosts = [c["domain"] for c in (citations.get("competitors") or [])]
     platforms = extract_platforms(comp_hosts, target_host)
@@ -1715,6 +1798,7 @@ async def run_paid_audit(url: str, lang: str = "en",
         "action_plan": plan,
         "cms": cms,
         "platforms": platforms,
+        "ecosystem": ecosystem,
         "mode": score["mode"],
         # moteurs réellement interrogés — persistés pour que le re-scan J+30
         # relance exactement les mêmes (t_9864864c)

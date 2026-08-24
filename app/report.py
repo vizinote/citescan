@@ -66,6 +66,74 @@ CHECK_META = {
 
 # ---------------------------------------------------------------- storage
 
+# Passerelle commerciale honnête « Aller plus loin » (t_a351f0cd) — UNE phrase
+# factuelle par produit, uniquement si le signal est RÉELLEMENT présent dans
+# les données d'audit (audit.ecosystem). Jamais de fausse urgence, jamais de
+# compte à rebours, jamais les deux systématiquement. Si aucun signal : la
+# section ne s'affiche pas du tout.
+_UPSELL_TXT = {
+    "fr": {
+        "title": "Aller plus loin",
+        "generic_widget": "un widget de chat",
+        "badgeia": ("Votre site utilise {widgets}. Si cet outil répond "
+                    "automatiquement à vos visiteurs (IA conversationnelle), "
+                    "l'article 50 de l'AI Act impose de le signaler clairement "
+                    "aux visiteurs : BadgeIA (39 €) fournit le badge de "
+                    "transparence et le dossier de preuve."),
+        "badgeia_cta": "Découvrir BadgeIA",
+        "a11y_imgs": "{n} image(s) sans texte alternatif",
+        "a11y_lang": "attribut de langue absent de la page",
+        "a11y": ("L'audit technique a relevé des signaux d'accessibilité "
+                 "perfectibles ({details}) : AccessiCheck (dès 29 €) réalise "
+                 "un audit d'accessibilité complet de votre site et hiérarchise "
+                 "les corrections."),
+        "a11y_cta": "Découvrir AccessiCheck",
+    },
+    "en": {
+        "title": "Going further",
+        "generic_widget": "a chat widget",
+        "badgeia": ("Your site uses {widgets}. If this tool replies to your "
+                    "visitors automatically (conversational AI), Article 50 of "
+                    "the AI Act requires you to disclose it clearly: BadgeIA "
+                    "(€39) provides the transparency badge and the evidence "
+                    "file."),
+        "badgeia_cta": "Discover BadgeIA",
+        "a11y_imgs": "{n} image(s) without alternative text",
+        "a11y_lang": "missing page language attribute",
+        "a11y": ("The technical audit found accessibility signals that could "
+                 "be improved ({details}): AccessiCheck (from €29) runs a full "
+                 "accessibility audit of your site and prioritizes the fixes."),
+        "a11y_cta": "Discover AccessiCheck",
+    },
+}
+
+BADGEIA_URL = "https://badgeia.brozapi.com/"
+ACCESSICHECK_URL = "https://accessicheck.brozapi.com/"
+
+
+def _build_upsell(audit: dict, lang: str) -> list:
+    """Conditional cross-sell entries — only from signals REALLY present in
+    the audit JSON. Empty list = no section rendered at all."""
+    U = _UPSELL_TXT[lang if lang in _UPSELL_TXT else "en"]
+    eco = audit.get("ecosystem") or {}
+    items = []
+    widgets = eco.get("chat_widgets") or []
+    if widgets:
+        names = ", ".join(w.get("label") or U["generic_widget"] for w in widgets)
+        items.append({"text": U["badgeia"].format(widgets=names),
+                      "url": BADGEIA_URL, "cta": U["badgeia_cta"]})
+    a11y = eco.get("accessibility") or {}
+    if a11y.get("weak"):
+        details = []
+        if a11y.get("images_missing_alt"):
+            details.append(U["a11y_imgs"].format(n=a11y["images_missing_alt"]))
+        if not a11y.get("html_lang", True):
+            details.append(U["a11y_lang"])
+        items.append({"text": U["a11y"].format(details=", ".join(details)),
+                      "url": ACCESSICHECK_URL, "cta": U["a11y_cta"]})
+    return items
+
+
 PUBLIC_BASE = "https://citescan.brozapi.com"
 RESCAN_DELAY_DAYS = 30
 
@@ -407,6 +475,8 @@ def _build_context(report: dict) -> dict:
         "cms_instruction": cms.get("instruction", ""),
         "rescan_url": rescan.get("url", ""),
         "rescan_date": rescan_date,
+        # passerelle honnête « Aller plus loin » (t_a351f0cd)
+        "upsell": _build_upsell(audit, lang),
         "year": time.strftime("%Y"),
     }
 

@@ -76,6 +76,10 @@
   .howto p { margin: 0; }
   .plain { color: #334155; font-style: italic; margin-top: 6px; }
   .bots-legend { color: var(--muted); font-size: .85rem; margin-bottom: 4px; }
+  .upsell { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+            padding: 14px 18px; margin: 10px 0; }
+  .upsell p { margin: 8px 0; }
+  .upsell a { color: var(--violet); font-weight: 700; }
   footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
            color: var(--muted); font-size: .82rem; }
   @page { size: A4; margin: 18mm 14mm; }
@@ -384,6 +388,15 @@
   automatisée avec les pages concurrentes citées par l'IA. Les citations dans les réponses d'IA
   varient dans le temps et selon les utilisateurs : ce rapport est une photographie à la date
   de génération, pas une garantie de citations futures.</p>
+
+  {% if upsell %}
+  <h2>Aller plus loin</h2>
+  <div class="upsell">
+    {% for u in upsell %}
+    <p>{{ u.text }} <a href="{{ u.url }}">{{ u.cta }} →</a></p>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <footer>
     <p><strong>CiteScan</strong> par Brozapi — contact@brozapi.com — https://citescan.brozapi.com<br>

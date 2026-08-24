@@ -559,5 +559,103 @@ class TestRenderMultiEngines(unittest.TestCase):
         assert_no_hole(self, html_page, "rapport multi FR verbatim « à partir du »")
 
 
+# ---------------------------------------------------------------- passerelle « Aller plus loin » (t_a351f0cd)
+# Section commerciale CONDITIONNELLE et honnête : jamais sans signal réel.
+
+def _audit_with_ecosystem(eco):
+    a = sample_audit()
+    if eco is not None:
+        a["ecosystem"] = eco
+    return a
+
+
+ECO_NONE = {"chat_widgets": [],
+            "accessibility": {"images_total": 2, "images_missing_alt": 0,
+                              "html_lang": True, "weak": False}}
+ECO_CHATBOT = {"chat_widgets": [{"key": "intercom", "label": "Intercom"}],
+               "accessibility": {"images_total": 2, "images_missing_alt": 0,
+                                 "html_lang": True, "weak": False}}
+ECO_A11Y = {"chat_widgets": [],
+            "accessibility": {"images_total": 5, "images_missing_alt": 4,
+                              "html_lang": True, "weak": True}}
+ECO_BOTH = {"chat_widgets": [{"key": "crisp", "label": "Crisp"}],
+            "accessibility": {"images_total": 5, "images_missing_alt": 3,
+                              "html_lang": False, "weak": True}}
+
+
+def _render_fr_en(audit_dict):
+    rep = reports.create_report("https://plombier-example.fr", "fr", audit_dict)
+    html_fr = reports.render_html(reports.get_report(rep["token"]))
+    rep = reports.create_report("https://plumber-example.com", "en", audit_dict)
+    html_en = reports.render_html(reports.get_report(rep["token"]))
+    return html_fr, html_en
+
+
+class TestUpsell(unittest.TestCase):
+    def test_no_signal_no_section(self):
+        # Cas 1 : aucun signal -> la section ne s'affiche PAS du tout
+        for eco in (None, ECO_NONE):  # None = rapports déjà en base (legacy)
+            html_fr, html_en = _render_fr_en(_audit_with_ecosystem(eco))
+            for html in (html_fr, html_en):
+                self.assertNotIn("Aller plus loin", html)
+                self.assertNotIn("Going further", html)
+                self.assertNotIn("badgeia.brozapi.com", html)
+                self.assertNotIn("accessicheck.brozapi.com", html)
+
+    def test_chatbot_only_shows_badgeia(self):
+        # Cas 2 : widget IA détecté -> BadgeIA seul, jamais AccessiCheck
+        html_fr, html_en = _render_fr_en(_audit_with_ecosystem(ECO_CHATBOT))
+        self.assertIn("Aller plus loin", html_fr)
+        self.assertIn("Intercom", html_fr)
+        self.assertIn("39 €", html_fr)
+        self.assertIn("https://badgeia.brozapi.com/", html_fr)
+        self.assertIn("article 50", html_fr)
+        self.assertNotIn("accessicheck.brozapi.com", html_fr)
+        self.assertIn("Going further", html_en)
+        self.assertIn("€39", html_en)
+        self.assertIn("Article 50", html_en)
+        self.assertNotIn("accessicheck.brozapi.com", html_en)
+
+    def test_weak_a11y_only_shows_accessicheck(self):
+        # Cas 3 : signaux d'accessibilité faibles -> AccessiCheck seul
+        html_fr, html_en = _render_fr_en(_audit_with_ecosystem(ECO_A11Y))
+        self.assertIn("Aller plus loin", html_fr)
+        self.assertIn("dès 29 €", html_fr)
+        self.assertIn("https://accessicheck.brozapi.com/", html_fr)
+        self.assertIn("4 image(s) sans texte alternatif", html_fr)
+        self.assertNotIn("badgeia.brozapi.com", html_fr)
+        self.assertIn("from €29", html_en)
+        self.assertIn("4 image(s) without alternative text", html_en)
+        self.assertNotIn("badgeia.brozapi.com", html_en)
+
+    def test_both_signals_show_both(self):
+        # Cas 4 : les deux signaux réels -> les deux mentions (jamais sinon)
+        html_fr, _ = _render_fr_en(_audit_with_ecosystem(ECO_BOTH))
+        self.assertIn("Crisp", html_fr)
+        self.assertIn("https://badgeia.brozapi.com/", html_fr)
+        self.assertIn("https://accessicheck.brozapi.com/", html_fr)
+        self.assertIn("3 image(s) sans texte alternatif", html_fr)
+        self.assertIn("attribut de langue absent", html_fr)
+        # une seule occurrence de chaque (pas de matraquage)
+        self.assertEqual(html_fr.count("badgeia.brozapi.com"), 1)
+        self.assertEqual(html_fr.count("accessicheck.brozapi.com"), 1)
+
+    def test_generic_widget_localized(self):
+        eco = {"chat_widgets": [{"key": "chatbot_generic", "label": None}],
+               "accessibility": {"images_total": 0, "images_missing_alt": 0,
+                                 "html_lang": True, "weak": False}}
+        html_fr, html_en = _render_fr_en(_audit_with_ecosystem(eco))
+        self.assertIn("un widget de chat", html_fr)
+        self.assertIn("a chat widget", html_en)
+
+    def test_no_hole_upsell_fr(self):
+        html_fr, _ = _render_fr_en(_audit_with_ecosystem(ECO_BOTH))
+        assert_no_hole(self, html_fr, "rapport FR + passerelle")
+
+    def test_no_hole_upsell_en(self):
+        _, html_en = _render_fr_en(_audit_with_ecosystem(ECO_BOTH))
+        assert_no_hole(self, html_en, "rapport EN + passerelle")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -513,5 +513,55 @@ check("multi: parallèle — résultats identiques au séquentiel",
       c_par["engines_run"] == ["perplexity", "gemini", "chatgpt", "claude"]
       and c_par["total"] == 60 and c_par["status"] == "ok")
 
+# --- ecosystem signals (t_a351f0cd) : passerelle honnête BadgeIA/AccessiCheck ---
+html_no_widget = '<html lang="fr"><body><h1>Boulangerie</h1><p>Pain artisanal.</p></body></html>'
+check("eco: aucun widget sur page sobre",
+      audit.detect_chat_widgets(html_no_widget) == [])
+check("eco: le texte qui PARLE de chatbots n'est pas un widget",
+      audit.detect_chat_widgets(
+          '<html lang="fr"><body><p>Notre article sur les chatbots IA.</p></body></html>') == [])
+w = audit.detect_chat_widgets(
+    '<html><body><script src="https://widget.intercom.io/widget/abc"></script></body></html>')
+check("eco: Intercom détecté", any(x["key"] == "intercom" for x in w), f"got {w}")
+w = audit.detect_chat_widgets(
+    '<html><body><script>window.$crisp=[];CRISP_WEBSITE_ID="x";</script>'
+    '<script src="https://client.crisp.chat/l.js"></script></body></html>')
+check("eco: Crisp détecté", any(x["key"] == "crisp" for x in w), f"got {w}")
+w = audit.detect_chat_widgets(
+    '<html><body><script src="//code.tidio.co/xyz.js"></script></body></html>')
+check("eco: Tidio détecté", any(x["key"] == "tidio" for x in w), f"got {w}")
+w = audit.detect_chat_widgets(
+    '<html><body><iframe src="https://www.chatbase.co/chatbot-iframe/xyz"></iframe></body></html>')
+check("eco: Chatbase détecté", any(x["key"] == "chatbase" for x in w), f"got {w}")
+w = audit.detect_chat_widgets(
+    '<html><body><script src="https://cdn.example.com/mon-chatbot.js"></script></body></html>')
+check("eco: chatbot générique détecté (script src)",
+      any(x["key"] == "chatbot_generic" for x in w), f"got {w}")
+check("eco: chatbot générique — label None (wording localisé au rendu)",
+      w[0]["label"] is None)
+
+a11y = audit.accessibility_signals('<html lang="fr"><body>'
+                                   '<img src="a.jpg" alt="logo">'
+                                   '<img src="b.jpg" alt=""></body></html>')
+check("eco a11y: page conforme non weak",
+      a11y["weak"] is False and a11y["images_missing_alt"] == 0
+      and a11y["html_lang"] is True)
+a11y = audit.accessibility_signals('<html lang="fr"><body>'
+                                   + "".join(f'<img src="{i}.jpg">' for i in range(3))
+                                   + '</body></html>')
+check("eco a11y: 3 images sans alt = weak",
+      a11y["weak"] is True and a11y["images_missing_alt"] == 3)
+a11y = audit.accessibility_signals('<html><body><img src="a.jpg"></body></html>')
+check("eco a11y: lang absente + 1 image sans alt = weak",
+      a11y["weak"] is True and a11y["html_lang"] is False)
+a11y = audit.accessibility_signals('<html lang="fr"><body><img src="a.jpg"></body></html>')
+check("eco a11y: 1 image sans alt seule = pas weak (seuil honnête)",
+      a11y["weak"] is False)
+eco = audit.ecosystem_signals(
+    '<html><body><script src="https://client.crisp.chat/l.js"></script>'
+    '<img src="a.jpg"><img src="b.jpg"><img src="c.jpg"></body></html>')
+check("eco: bundle widgets + a11y",
+      eco["chat_widgets"][0]["key"] == "crisp" and eco["accessibility"]["weak"] is True)
+
 print(f"\nUNIT: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)
