@@ -336,7 +336,7 @@ async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
     annotations/search_results, never model-generated text, so a schema would
     only add failure modes without changing the client-facing output."""
     system = _SONAR_SYSTEM.get(lang, _SONAR_SYSTEM["en"])
-    delay = 8.0
+    delay = 4.0
     for attempt in range(retries + 1):
         try:
             r = await client.post(PERPLEXITY_AGENT_URL, json={
@@ -345,7 +345,10 @@ async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                 "instructions": system,
                 "language_preference": lang,
                 "tools": [{"type": "web_search"}],
-                "max_output_tokens": 1024,
+                # 640 suffit largement : seules 1-2 phrases (verbatim) et les
+                # URLs citées sont utilisées — réponses plus courtes = audit
+                # ~2x plus rapide et moins cher (constat prod t_a857e039).
+                "max_output_tokens": 640,
             }, headers={"Authorization": f"Bearer {PERPLEXITY_API_KEY}",
                         "Content-Type": "application/json"})
             if r.status_code == 429 and attempt < retries:
@@ -353,7 +356,9 @@ async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                 wait = delay
                 if retry_after:
                     try:
-                        wait = max(wait, float(retry_after))
+                        # borné : un Retry-After élevé sous charge parallèle ne
+                        # doit pas faire dérailler tout l'audit
+                        wait = min(max(wait, float(retry_after)), 30.0)
                     except ValueError:
                         pass
                 await asyncio.sleep(wait)
@@ -479,7 +484,7 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     async with httpx.AsyncClient(timeout=timeout) as client:
         for q in queries:
             results.append(await _agent_query(client, q, lang=lang))
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(0.8)
 
     per_query = []
     cited_count = 0
