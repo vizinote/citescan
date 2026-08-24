@@ -81,9 +81,9 @@ _TXT = {
         "robots_missing": "robots.txt introuvable — les bots IA sont autorisés par défaut",
         "robots_blocked": "robots.txt bloque : {bots}",
         "robots_ok": "tous les principaux bots IA sont autorisés",
-        "extract_pass": "{words} mots extractibles sans JavaScript, {headings} titres",
-        "extract_warn": "seulement {words} mots extractibles sans JavaScript",
-        "extract_fail": "contenu trop mince ({words} mots) — nécessite probablement un rendu JavaScript",
+        "extract_pass": "contenu textuel lisible par les IA — quantité suffisante pour être cité",
+        "extract_warn": "contenu textuel un peu mince : étoffez le texte visible sans JavaScript pour maximiser vos chances d'être cité",
+        "extract_fail": "contenu trop mince — la page semble dépendre de JavaScript ; les IA risquent de ne pas pouvoir lire votre offre",
         "jsonld_pass": "JSON-LD valide : {types}",
         "jsonld_untyped": "sans type",
         "jsonld_invalid": "JSON-LD présent mais invalide (erreur d'analyse)",
@@ -102,9 +102,9 @@ _TXT = {
         "robots_missing": "robots.txt not found — AI bots default to allowed",
         "robots_blocked": "robots.txt blocks: {bots}",
         "robots_ok": "all major AI bots allowed",
-        "extract_pass": "{words} words extractable without JS, {headings} headings",
-        "extract_warn": "only {words} words extractable without JS",
-        "extract_fail": "thin content ({words} words) — likely requires JS rendering",
+        "extract_pass": "text content readable by AIs — sufficient volume to be cited",
+        "extract_warn": "text content is on the thin side: expand the text visible without JavaScript to maximize your chances of being cited",
+        "extract_fail": "content too thin — the page seems to depend on JavaScript; AIs may be unable to read your offer",
         "jsonld_pass": "valid JSON-LD: {types}",
         "jsonld_untyped": "untyped",
         "jsonld_invalid": "JSON-LD present but invalid (parse error)",
@@ -189,14 +189,11 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str,
     words = len(text.split())
     headings = len(soup.find_all(["h1", "h2", "h3"]))
     if words >= 300 and headings >= 1:
-        checks["extract"] = {"status": "pass", "points": 30,
-                             "detail": T["extract_pass"].format(words=words, headings=headings)}
+        checks["extract"] = {"status": "pass", "points": 30, "detail": T["extract_pass"]}
     elif words >= 100:
-        checks["extract"] = {"status": "warn", "points": 20,
-                             "detail": T["extract_warn"].format(words=words)}
+        checks["extract"] = {"status": "warn", "points": 20, "detail": T["extract_warn"]}
     else:
-        checks["extract"] = {"status": "fail", "points": 5,
-                             "detail": T["extract_fail"].format(words=words)}
+        checks["extract"] = {"status": "fail", "points": 5, "detail": T["extract_fail"]}
 
     # 3. JSON-LD (20 pts) — parsed BEFORE script decompose below
     soup_raw = BeautifulSoup(html, "html.parser")
@@ -408,6 +405,250 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     return {"status": status, "queries_ok": ok_count, "total": len(queries),
             "cited_count": cited_count, "queries": per_query,
             "competitors": competitors}
+
+
+# ---------------------------------------------------------------- sector detection (V4 pro + Sonar guardrail)
+#
+# Recette 2026-08-24 (t_ffc46988) : l'heuristique H1 détectait « micro-outils »
+# pour brozapi.com (un studio de LOGICIELS) -> les 15 requêtes Sonar parlaient
+# bricolage (Leroy Merlin, Bosch, Dremel) et toute la mesure était fausse.
+# Désormais :
+#   (a) V4 pro formule le secteur à partir du contenu réel de la page, en
+#       termes NON AMBIGUS qui s'insèrent dans les gabarits de requêtes ;
+#   (b) garde-fou de cohérence : 1 requête Sonar de validation AVANT les 15,
+#       V4 pro juge si les domaines cités sont dans le même secteur que le
+#       site ; sinon reformulation et nouveau test (max 3 essais) ;
+#   (c) le rapport affiche la formulation validée (champ "keyword").
+
+_SECTOR_USER = {
+    "fr": """Voici le contenu de la page d'accueil du site {domain} :
+Titre : {title}
+H1 : {h1}
+Meta description : {desc}
+Données structurées : {jsonld}
+Extrait du texte visible : {text}
+
+Formule le secteur d'activité EXACT de ce site en 3 à 6 mots, en français, de façon NON AMBIGUË :
+- jamais un terme polysémique nu : « micro-outils » évoque le bricolage, « solutions » ne veut rien dire ;
+  si le site vend des logiciels, dis « logiciels en ligne … » ou « micro-SaaS … », jamais « outils » seul ;
+- la formulation doit s'insérer naturellement dans des questions d'intention d'achat comme
+  « Quel est le meilleur X pour une petite entreprise ? » ou « Où acheter X en ligne ? » ;
+- utilise les termes qu'un acheteur taperait réellement dans un moteur de recherche.
+JSON attendu : {{"secteur": "...", "alternatives": ["...", "..."]}}""",
+    "en": """Here is the homepage content of the site {domain}:
+Title: {title}
+H1: {h1}
+Meta description: {desc}
+Structured data: {jsonld}
+Visible text excerpt: {text}
+
+Formulate this site's EXACT business sector in 3 to 6 words, in English, UNAMBIGUOUSLY:
+- never a bare polysemous term: "micro-tools" suggests DIY hardware, "solutions" means nothing;
+  if the site sells software, say "online software …" or "micro-SaaS …", never "tools" alone;
+- the phrasing must fit naturally inside buyer-intent questions like
+  "What is the best X for a small business?" or "Where can I buy X online?";
+- use the terms a real buyer would type into a search engine.
+Expected JSON: {{"secteur": "...", "alternatives": ["...", "..."]}}""",
+}
+
+_SECTOR_CHECK_USER = {
+    "fr": """Le site {domain} se présente ainsi : {summary}
+Secteur candidat : « {sector} ».
+En interrogeant un moteur de recherche IA sur ce secteur, les domaines cités sont : {hosts}
+
+Ces domaines sont-ils majoritairement des entreprises du MÊME secteur que le site —
+et non d'un secteur homonyme (ex. bricolage/outillage pour un éditeur de logiciels) ?
+Ignore les médias généralistes, encyclopédies et réseaux sociaux dans ton jugement.
+JSON attendu : {{"coherent": true ou false, "secteur_corrige": "meilleure formulation si incohérent, sinon chaîne vide"}}""",
+    "en": """The site {domain} describes itself as: {summary}
+Candidate sector: "{sector}".
+When querying an AI search engine about this sector, the cited domains are: {hosts}
+
+Are these domains mostly businesses in the SAME sector as the site — and not a
+namesake sector (e.g. DIY/hardware for a software publisher)?
+Ignore generalist media, encyclopedias and social networks in your judgment.
+Expected JSON: {{"coherent": true or false, "secteur_corrige": "better phrasing if incoherent, else empty string"}}""",
+}
+
+_SECTOR_VALIDATION_QUERY = {
+    "fr": "Quels sont les sites et entreprises de référence dans le secteur suivant : {sector} ?",
+    "en": "Which sites and companies are leading references in the following sector: {sector}?",
+}
+
+
+def extract_page_signals(html: str) -> dict:
+    """Title, H1, meta description, JSON-LD types and a visible-text excerpt —
+    the factual basis V4 pro uses to formulate the sector."""
+    soup = BeautifulSoup(html, "html.parser")
+    title = (soup.title.string.strip() if soup.title and soup.title.string else "")
+    h1 = "; ".join(h.get_text(" ", strip=True) for h in soup.find_all("h1")[:3])
+    desc_tag = soup.find("meta", attrs={"name": "description"}) or \
+        soup.find("meta", attrs={"property": "og:description"})
+    desc = (desc_tag.get("content") or "").strip() if desc_tag else ""
+    types = []
+    for s in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(s.string or "{}")
+            items = data.get("@graph", data) if isinstance(data, dict) else data
+            for item in (items if isinstance(items, list) else [items]):
+                if isinstance(item, dict) and "@type" in item:
+                    t = item["@type"]
+                    types.extend(t if isinstance(t, list) else [t])
+        except (json.JSONDecodeError, AttributeError):
+            continue
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    text = soup.get_text(" ", strip=True)[:800]
+    return {"title": title[:200], "h1": h1[:200], "desc": desc[:300],
+            "jsonld": ", ".join(sorted(set(types)))[:200], "text": text}
+
+
+def _signals_summary(signals: dict) -> str:
+    return (f"titre « {signals.get('title', '')} », H1 « {signals.get('h1', '')} », "
+            f"description « {signals.get('desc', '')} »")
+
+
+def _parse_json_object(raw: str) -> "dict | None":
+    """Tolerant JSON object extraction from an LLM answer."""
+    try:
+        txt = raw.strip()
+        if txt.startswith("```"):
+            txt = txt.split("```")[1]
+            if txt.startswith("json"):
+                txt = txt[4:]
+        start, end = txt.find("{"), txt.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        data = json.loads(txt[start:end + 1])
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _clean_sector(value: str) -> str:
+    """Normalize a sector phrasing; '' if unusable."""
+    s = re.sub(r"\s+", " ", (value or "").strip().strip("«»\"' .,:;!"))
+    words = s.split()
+    if not (2 <= len(words) <= 8) or len(s) > 80:
+        return ""
+    return s
+
+
+async def _openrouter_json(system: str, user: str, max_tokens: int = 400) -> "dict | None":
+    """One OpenRouter call expecting a JSON object back. None on any failure."""
+    if not OPENROUTER_API_KEY:
+        return None
+    timeout = httpx.Timeout(60.0)
+    for _ in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.post(OPENROUTER_URL, json={
+                    "model": WRITER_MODEL,
+                    "messages": [{"role": "system", "content": system},
+                                 {"role": "user", "content": user}],
+                    "temperature": 0.2,
+                    "max_tokens": max_tokens,
+                    "response_format": {"type": "json_object"},
+                }, headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://citescan.brozapi.com",
+                            "X-Title": "CiteScan sector detection"})
+            if r.status_code != 200:
+                continue
+            parsed = _parse_json_object(r.json()["choices"][0]["message"]["content"])
+            if parsed is not None:
+                return parsed
+        except Exception:
+            continue
+    return None
+
+
+async def formulate_sector(signals: dict, domain: str, lang: str) -> "list[str]":
+    """V4 pro formulates the sector from real page content. Returns an ordered
+    candidate list (main phrasing first, then alternatives); [] if unavailable."""
+    lang = lang if lang in _SECTOR_USER else "en"
+    user = _SECTOR_USER[lang].format(
+        domain=domain, title=signals.get("title", ""), h1=signals.get("h1", ""),
+        desc=signals.get("desc", ""), jsonld=signals.get("jsonld") or "-",
+        text=signals.get("text", ""))
+    data = await _openrouter_json(_WRITER_SYSTEM[lang], user)
+    if not data:
+        return []
+    candidates = []
+    main = _clean_sector(str(data.get("secteur", "")))
+    if main:
+        candidates.append(main)
+    for alt in (data.get("alternatives") or [])[:3]:
+        alt = _clean_sector(str(alt))
+        if alt and alt.lower() != main.lower() and alt not in candidates:
+            candidates.append(alt)
+    return candidates
+
+
+async def validate_sector(sector: str, domain: str, signals: dict, lang: str) -> dict:
+    """Garde-fou de cohérence : 1 requête Sonar sur le secteur candidat, puis
+    V4 pro juge si les domaines cités appartiennent au même secteur que le site.
+    status: 'coherent' | 'incoherent' | 'unknown' (Sonar/OpenRouter indisponible)."""
+    lang = lang if lang in _SECTOR_VALIDATION_QUERY else "en"
+    result = {"status": "unknown", "hosts": [], "corrected": ""}
+    if not PERPLEXITY_API_KEY or not OPENROUTER_API_KEY:
+        return result
+    query = _SECTOR_VALIDATION_QUERY[lang].format(sector=sector)
+    timeout = httpx.Timeout(45.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        res = await _sonar_query(client, query, lang=lang)
+    if not res["ok"]:
+        return result
+    hosts = sorted({h for h in (_host_of(c) for c in res["citations"]) if h})[:12]
+    if not hosts:
+        return result
+    result["hosts"] = hosts
+    user = _SECTOR_CHECK_USER[lang].format(
+        domain=domain, summary=_signals_summary(signals), sector=sector,
+        hosts=", ".join(hosts))
+    data = await _openrouter_json(_WRITER_SYSTEM[lang], user)
+    if data is None or "coherent" not in data:
+        return result
+    result["status"] = "coherent" if data.get("coherent") else "incoherent"
+    result["corrected"] = _clean_sector(str(data.get("secteur_corrige", "")))
+    return result
+
+
+async def detect_sector(html: str, domain: str, lang: str,
+                        max_attempts: int = 3) -> dict:
+    """Secteur précis et validé pour l'audit. Ne lève jamais d'exception :
+    repli sur l'heuristique historique si V4 pro est indisponible, avec un
+    champ 'method' explicite dans le JSON d'audit."""
+    signals = extract_page_signals(html)
+    candidates = await formulate_sector(signals, domain, lang)
+    history = []
+    if not candidates:
+        return {"keyword": extract_keyword(html, domain),
+                "validated": None, "attempts": 0, "method": "heuristic-fallback",
+                "history": []}
+    queue = list(candidates)
+    current = queue.pop(0)
+    for attempt in range(1, max_attempts + 1):
+        verdict = await validate_sector(current, domain, signals, lang)
+        history.append({"sector": current, "verdict": verdict["status"],
+                        "hosts": verdict["hosts"]})
+        if verdict["status"] == "coherent":
+            return {"keyword": current, "validated": True, "attempts": attempt,
+                    "method": "v4-pro+sonar-guardrail", "history": history}
+        if verdict["status"] == "incoherent":
+            nxt = verdict["corrected"] or (queue.pop(0) if queue else "")
+            if not nxt:
+                break
+            current = nxt
+            continue
+        # 'unknown' : impossible de trancher (API indisponible) — on garde la
+        # formulation V4 pro, marquée comme non validée.
+        return {"keyword": current, "validated": None, "attempts": attempt,
+                "method": "v4-pro-no-guardrail", "history": history}
+    # Essais épuisés sans cohérence : on conserve la dernière formulation
+    # (jugée la moins mauvaise) mais marquée non validée — jamais en silence.
+    return {"keyword": current, "validated": False, "attempts": max_attempts,
+            "method": "v4-pro-guardrail-exhausted", "history": history}
 
 
 # ---------------------------------------------------------------- scoring + action plan
@@ -677,7 +918,12 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
     else:
         technical = technical_audit(html, robots_text, final_url, lang=lang)
 
-    keyword = extract_keyword(html, domain) if html else domain
+    if html:
+        sector_info = await detect_sector(html, domain, lang)
+    else:
+        sector_info = {"keyword": domain, "validated": None, "attempts": 0,
+                       "method": "no-page-content", "history": []}
+    keyword = sector_info["keyword"]
     citations = await citation_audit(domain, keyword, lang)
     score = compute_score(technical, citations)
     plan = build_action_plan(technical, citations, lang) if not fetch_error else []
@@ -686,6 +932,7 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         "domain": domain,
         "lang": lang,
         "keyword": keyword,
+        "sector": sector_info,
         "score": score,
         "technical": technical,
         "citations": citations,

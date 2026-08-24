@@ -83,7 +83,7 @@
         Technical audit: {{ score_technical }}/100
         {% if score_citation is not none %} · Citations: {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} queries){% endif %}
       </div>
-      <div class="score-sub">Detected sector keyword: "{{ keyword }}"</div>
+      <div class="score-sub">Analyzed sector: "{{ keyword }}"</div>
     </div>
   </div>
 
@@ -172,7 +172,7 @@
   <h2>4. Methodology and limitations</h2>
   <p>This audit combines: (1) a fully automated technical analysis of your homepage and
   robots.txt; (2) 15 real queries asked to Perplexity Sonar in your site's language,
-  generated from your detected sector ("{{ keyword }}"). Citations in AI answers vary over
+  generated from your analyzed sector ("{{ keyword }}"). Citations in AI answers vary over
   time and across users: this report is a snapshot at generation date, not a guarantee of
   future citations.</p>
 

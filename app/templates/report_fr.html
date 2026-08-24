@@ -83,7 +83,7 @@
         Audit technique : {{ score_technical }}/100
         {% if score_citation is not none %} · Citations : {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} requêtes){% endif %}
       </div>
-      <div class="score-sub">Mot-clé sectoriel détecté : « {{ keyword }} »</div>
+      <div class="score-sub">Secteur analysé : « {{ keyword }} »</div>
     </div>
   </div>
 
@@ -172,7 +172,7 @@
   <h2>4. Méthodologie et limites</h2>
   <p>Cet audit combine : (1) une analyse technique 100 % automatisée de votre page d'accueil et de
   votre robots.txt ; (2) 15 requêtes réelles posées à Perplexity Sonar dans la langue de votre site,
-  générées à partir de votre secteur détecté (« {{ keyword }} »). Les citations dans les réponses
+  générées à partir de votre secteur analysé (« {{ keyword }} »). Les citations dans les réponses
   d'IA varient dans le temps et selon les utilisateurs : ce rapport est une photographie à la date
   de génération, pas une garantie de citations futures.</p>
 

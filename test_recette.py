@@ -70,7 +70,12 @@ html_fr = """<html><head><title>Boulangerie Martin</title></head>
 t_fr = audit.technical_audit(html_fr, None, "https://example.fr", lang="fr")
 check("FR: robots detail", "introuvable" in t_fr["checks"]["robots"]["detail"],
       t_fr["checks"]["robots"]["detail"])
-check("FR: extract detail", "extractibles" in t_fr["checks"]["extract"]["detail"])
+check("FR: extract detail actionnable", "cité" in t_fr["checks"]["extract"]["detail"],
+      t_fr["checks"]["extract"]["detail"])
+check("FR: extract sans compteur de mots brut",
+      "mots extractibles" not in t_fr["checks"]["extract"]["detail"] and
+      not any(ch.isdigit() for ch in t_fr["checks"]["extract"]["detail"]),
+      t_fr["checks"]["extract"]["detail"])
 check("FR: jsonld detail", "aucune donnée" in t_fr["checks"]["jsonld"]["detail"])
 check("FR: eeat missing FR", any("à propos" in m for m in t_fr["checks"]["eeat"]["missing"]))
 check("FR: missing_codes presents",

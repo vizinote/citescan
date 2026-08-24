@@ -71,7 +71,7 @@ cat > /tmp/t_audit_fr.json <<'EOF'
  "score": {"total": 55, "technical": 55, "citation": null, "mode": "degraded"},
  "technical": {"score": 55, "word_count": 180, "checks": {
    "robots": {"status": "warn", "points": 15, "detail": "robots.txt introuvable — les bots IA sont autorisés par défaut", "bots": {}},
-   "extract": {"status": "warn", "points": 20, "detail": "seulement 180 mots extractibles sans JavaScript"},
+   "extract": {"status": "warn", "points": 20, "detail": "contenu textuel un peu mince : étoffez le texte visible sans JavaScript pour maximiser vos chances d'être cité"},
    "jsonld": {"status": "warn", "points": 5, "detail": "aucune donnée structurée JSON-LD"},
    "eeat": {"status": "warn", "points": 10, "detail": "dates de publication présentes; pas de page à propos / mentions légales",
             "signals": ["dates de publication présentes"], "missing": ["pas de page à propos / mentions légales"],
@@ -88,7 +88,7 @@ cat > /tmp/t_audit_en.json <<'EOF'
  "score": {"total": 55, "technical": 55, "citation": null, "mode": "degraded"},
  "technical": {"score": 55, "word_count": 180, "checks": {
    "robots": {"status": "warn", "points": 15, "detail": "robots.txt not found — AI bots default to allowed", "bots": {}},
-   "extract": {"status": "warn", "points": 20, "detail": "only 180 words extractable without JavaScript"},
+   "extract": {"status": "warn", "points": 20, "detail": "text content is on the thin side: expand the text visible without JavaScript to maximize your chances of being cited"},
    "jsonld": {"status": "warn", "points": 5, "detail": "no JSON-LD structured data"},
    "eeat": {"status": "warn", "points": 10, "detail": "dates present; no about/legal page",
             "signals": ["dates present"], "missing": ["no about/legal page"],
@@ -114,6 +114,8 @@ has "rapport FR : plan FR" "$HFR" "Plan d'action priorisé"
 hasnot "rapport FR : zero anglais technique" "$HFR" "without JS"
 hasnot "rapport FR : zero anglais detail" "$HFR" "not found — AI bots"
 hasnot "rapport FR : jargon word count retire" "$HFR" "mots</strong>"
+hasnot "rapport FR : pas de compteur de mots brut" "$HFR" "mots extractibles"
+has "rapport FR : secteur analyse (nouveau libelle)" "$HFR" "Secteur analysé"
 
 REN=$(curl -s -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
       -d "{\"lang\":\"en\",\"audit\":$(cat /tmp/t_audit_en.json)}" "$BASE/api/report")
@@ -126,10 +128,45 @@ has "rapport EN : synthese EN" "$HEN" "invisible to AI assistants"
 has "rapport EN : detail EN" "$HEN" "without JavaScript"
 hasnot "rapport EN : zero FR" "$HEN" "Rapport d'audit"
 hasnot "rapport EN : jargon word count retire" "$HEN" "words</strong>"
+hasnot "rapport EN : pas de compteur de mots brut" "$HEN" "words extractable"
+has "rapport EN : analyzed sector (nouveau libelle)" "$HEN" "Analyzed sector"
 
 PDF=$(curl -s -o /tmp/t_rep.pdf -w "%{http_code}" "$BASE/rapports/$TOKFR/pdf")
 ok "PDF FR -> 200" "$PDF" "200"
 has "PDF FR : vrai PDF" "$(head -c 5 /tmp/t_rep.pdf)" "%PDF-"
+
+# --- 5b. NON-REGRESSION SECTEUR (pipeline reel brozapi.com, ~0,20 $ Sonar+V4) ---
+# Recette t_ffc46988 : le rapport sur brozapi.com (studio de LOGICIELS) ne doit
+# citer AUCUN site de bricolage/outillage et le secteur affiche doit etre la
+# formulation precise validee par le garde-fou Sonar. SKIP_LIVE=1 pour sauter.
+echo "--- non-regression secteur brozapi.com (pipeline reel) ---"
+if [ "${SKIP_LIVE:-0}" = "1" ]; then
+  echo "SKIP tests live (SKIP_LIVE=1)"
+else
+  RREAL=$(curl -s --max-time 500 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
+        -d '{"url":"https://brozapi.com","lang":"fr"}' "$BASE/api/report")
+  TOKREAL=$(printf '%s' "$RREAL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
+  ok "rapport reel FR cree" "$([ -n "$TOKREAL" ] && echo oui)" "oui"
+  HREAL=$(curl -s "$BASE/rapports/$TOKREAL")
+  printf '%s' "$HREAL" > /tmp/t_real_fr.html
+  has "reel FR : secteur analyse affiche" "$HREAL" "Secteur analysé"
+  hasnot "reel FR : secteur PAS 'micro-outils'" "$HREAL" "Secteur analysé : « micro-outils »"
+  hasnot "reel FR : aucun site bricolage (leroymerlin)" "$HREAL" "leroymerlin"
+  hasnot "reel FR : aucun site bricolage (tivoly)" "$HREAL" "tivoly"
+  hasnot "reel FR : aucun site bricolage (doga)" "$HREAL" "doga.fr"
+  hasnot "reel FR : aucun site bricolage (bosch)" "$HREAL" "bosch"
+  hasnot "reel FR : aucun site bricolage (dremel)" "$HREAL" "dremel"
+  hasnot "reel FR : aucun site bricolage (milwaukee)" "$HREAL" "milwaukee"
+  has "reel FR : vrai tableau HTML des requetes" "$HREAL" "<table>"
+  has "reel FR : colonne Requete testee" "$HREAL" "Requête testée"
+  has "reel FR : colonne Votre site cite" "$HREAL" "Votre site cité ?"
+  has "reel FR : colonne Concurrents cites" "$HREAL" "Concurrents cités"
+  hasnot "reel FR : pas de markdown brut (pipes)" "$HREAL" "| ---"
+  hasnot "reel FR : pas de compteur de mots" "$HREAL" "mots extractibles"
+  PDFR=$(curl -s -o /tmp/t_real_fr.pdf -w "%{http_code}" "$BASE/rapports/$TOKREAL/pdf")
+  ok "reel FR : PDF -> 200" "$PDFR" "200"
+  has "reel FR : vrai PDF" "$(head -c 5 /tmp/t_real_fr.pdf)" "%PDF-"
+fi
 
 # --- 6. Site public (DNS + Caddy) ---
 echo "--- public ---"

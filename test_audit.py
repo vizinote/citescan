@@ -90,5 +90,90 @@ h1_en = """<html><head><title>Acme</title></head>
 <body><h1>The best project management software for teams</h1></body></html>"""
 check("keyword EN cuts at 'for'", audit.extract_keyword(h1_en, "acme.com") == "best project management software")
 
+# --- detection de secteur V4 pro + garde-fou Sonar (t_ffc46988) ---
+sig = audit.extract_page_signals("""<html><head><title>Brozapi — micro-SaaS</title>
+<meta name="description" content="Studio de micro-SaaS pour entrepreneurs">
+<script type="application/ld+json">{"@type":"Organization","name":"Brozapi"}</script></head>
+<body><h1>Des logiciels en ligne pour entrepreneurs</h1><p>BadgeIA est un badge IA.</p></body></html>""")
+check("signals: title", sig["title"].startswith("Brozapi"))
+check("signals: h1", "logiciels en ligne" in sig["h1"])
+check("signals: desc", "micro-SaaS" in sig["desc"])
+check("signals: jsonld", "Organization" in sig["jsonld"])
+check("signals: text excerpt", "BadgeIA" in sig["text"])
+
+check("clean_sector ok", audit._clean_sector(" « logiciels en ligne pour entrepreneurs » ") ==
+      "logiciels en ligne pour entrepreneurs")
+check("clean_sector rejette 1 mot", audit._clean_sector("logiciels") == "")
+check("clean_sector rejette trop long", audit._clean_sector("un " * 40) == "")
+check("parse_json_object propre", audit._parse_json_object('{"secteur": "x y"}') == {"secteur": "x y"})
+check("parse_json_object fenced", audit._parse_json_object('```json\n{"a": 1}\n```') == {"a": 1})
+check("parse_json_object bruit autour",
+      audit._parse_json_object('voici {"a": 1} merci') == {"a": 1})
+check("parse_json_object invalide", audit._parse_json_object("nope") is None)
+
+# sans cles API : formulation vide, validation 'unknown', repli heuristique explicite
+_old_or, _old_px = audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY
+audit.OPENROUTER_API_KEY = ""
+audit.PERPLEXITY_API_KEY = ""
+check("formulate_sector sans cle -> []",
+      asyncio.run(audit.formulate_sector(sig, "https://brozapi.com", "fr")) == [])
+v = asyncio.run(audit.validate_sector("logiciels en ligne", "https://brozapi.com", sig, "fr"))
+check("validate_sector sans cle -> unknown", v["status"] == "unknown" and v["hosts"] == [])
+d = asyncio.run(audit.detect_sector(h1_slogan, "https://brozapi.com", "fr"))
+check("detect_sector repli heuristique explicite",
+      d["method"] == "heuristic-fallback" and d["validated"] is None and
+      d["keyword"] == "micro-outils", str(d))
+audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY = _old_or, _old_px
+
+# boucle du garde-fou (mocks) : incoherent -> reformulation -> coherent
+class _FakeSeq:
+    def __init__(self, verdicts):
+        self.verdicts = list(verdicts)
+    async def __call__(self, sector, domain, signals, lang):
+        return self.verdicts.pop(0)
+
+async def _fake_formulate(signals, domain, lang):
+    return ["micro-outils", "logiciels en ligne"]
+
+_orig_formulate, _orig_validate = audit.formulate_sector, audit.validate_sector
+audit.formulate_sector = _fake_formulate
+audit.validate_sector = _FakeSeq([
+    {"status": "incoherent", "hosts": ["leroymerlin.fr"], "corrected": "logiciels en ligne pour entrepreneurs"},
+    {"status": "coherent", "hosts": ["saas.fr"], "corrected": ""},
+])
+d2 = asyncio.run(audit.detect_sector(h1_slogan, "https://brozapi.com", "fr"))
+check("garde-fou: reformulation puis valide",
+      d2["keyword"] == "logiciels en ligne pour entrepreneurs" and
+      d2["validated"] is True and d2["attempts"] == 2 and
+      d2["method"] == "v4-pro+sonar-guardrail", str(d2))
+check("garde-fou: historique conserve", len(d2["history"]) == 2 and
+      d2["history"][0]["verdict"] == "incoherent")
+
+audit.validate_sector = _FakeSeq([
+    {"status": "incoherent", "hosts": ["a.fr"], "corrected": "x y"},
+    {"status": "incoherent", "hosts": ["b.fr"], "corrected": "z w"},
+    {"status": "incoherent", "hosts": ["c.fr"], "corrected": ""},
+])
+d3 = asyncio.run(audit.detect_sector(h1_slogan, "https://brozapi.com", "fr"))
+check("garde-fou: max 3 essais puis non valide explicite",
+      d3["attempts"] == 3 and d3["validated"] is False and
+      d3["method"] == "v4-pro-guardrail-exhausted", str(d3))
+
+audit.validate_sector = _FakeSeq([{"status": "unknown", "hosts": [], "corrected": ""}])
+d4 = asyncio.run(audit.detect_sector(h1_slogan, "https://brozapi.com", "fr"))
+check("garde-fou indisponible: formulation V4 gardee, marquee non validee",
+      d4["keyword"] == "micro-outils" and d4["validated"] is None and
+      d4["method"] == "v4-pro-no-guardrail", str(d4))
+audit.formulate_sector, audit.validate_sector = _orig_formulate, _orig_validate
+
+# sans cles API, run_paid_audit ne doit jamais planter sur la detection de secteur
+_old_or, _old_px = audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY
+audit.OPENROUTER_API_KEY = ""
+audit.PERPLEXITY_API_KEY = ""
+r = asyncio.run(audit.run_paid_audit("https://inaccessible-zzz.invalid", lang="fr"))
+check("run_paid_audit injoignable: secteur explicite",
+      r["sector"]["method"] == "no-page-content" and r["keyword"], str(r.get("sector")))
+audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY = _old_or, _old_px
+
 print(f"\nUNIT: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)
