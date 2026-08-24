@@ -48,12 +48,14 @@ for lang, path in PAGES.items():
           'id="offer-price"' in visible and 'id="order-btn"' in visible)
     check(f"{lang}: CTA toujours verrouillé (btn--disabled + disabled)",
           'btn--disabled' in visible and re.search(r'<button[^>]*disabled', visible) is not None)
-    check(f"{lang}: aucun lien Stripe actif",
-          ("buy.stripe.com" not in html) and "REPLACE_WITH_STRIPE_LINK_29" in html)
+    # Liens réels créés le 2026-08-24 (INACTIFS) : présents dans le HTML mais
+    # UNIQUEMENT dans le bloc commenté — jamais dans la partie visible.
+    check(f"{lang}: aucun lien Stripe dans la partie visible (verrou actif)",
+          "buy.stripe.com" not in visible)
     check(f"{lang}: grille JS 29/39/49",
           "PRICE_LADDER = {0: 29, 1: 39, 2: 49}" in visible)
-    check(f"{lang}: 3 liens Stripe prévus au déverrouillage",
-          all(f"REPLACE_WITH_STRIPE_LINK_{p}" in html for p in (29, 39, 49)))
+    check(f"{lang}: 3 liens Stripe réels prêts au déverrouillage (bloc commenté)",
+          len(re.findall(r"https://buy\.stripe\.com/\S+", html)) == 3)
     check(f"{lang}: checkout propage domaine|langue|moteurs",
           'd + "|" + lang + "|" + currentEngines().join(",")' in html)
     check(f"{lang}: sélecteur stylé",

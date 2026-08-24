@@ -6,10 +6,10 @@
 Tant que le verrou est actif :
 
 - La page `/offre` affiche un bouton **désactivé** avec une notice explicative.
-- Le script `create-payment-link.py` est présent mais **jamais exécuté** (demande de confirmation interactive `OUI-FRANCK-A-VALIDE`).
-- Aucun Payment Link n'est lié au site.
+- Les Payment Links existent (créés INACTIFS le 2026-08-24) mais **ne sont pas activés** : aucun encaissement possible, page Stripe « lien désactivé » pour tout visiteur. L'activation exige la saisie interactive de `OUI-FRANCK-A-VALIDE`.
+- Le formulaire de commande des pages offre reste **commenté** (bouton désactivé visible).
 
-## État actuel (carte 2 terminée)
+## État actuel (liens créés le 2026-08-24, INACTIFS)
 
 | Élément | Statut |
 |---|---|
@@ -17,20 +17,30 @@ Tant que le verrou est actif :
 | Page `/merci` FR + EN | ✅ créée (noindex) |
 | CGV FR + EN | ✅ créées (7 jours garantie, rétractation L.221-28 13°) |
 | Mentions légales FR + EN | ✅ créées (RGPD, médiation CM2C) |
-| Script création Payment Links | ✅ prêt, **non exécuté** (pas de clé LIVE sur le VPS) |
-| Payment Links LIVE 29/39/49 € | ❌ **non créés** (clé Stripe manquante) |
-| Liens sur les pages offre | ❌ **non liés** (verrou Franck) |
+| Script création Payment Links | ✅ exécuté le 2026-08-24 |
+| Payment Links LIVE 29/39/49 € | ✅ **créés INACTIFS** (`active=false`, status `pending_activation` dans `/opt/data/citescan-links.json`) |
+| Liens sur les pages offre | ✅ URLs renseignées dans `STRIPE_PAYMENT_LINKS` (formulaire toujours commenté — verrou Franck) |
+| Activation | ❌ **verrou Franck n°3** : `python3 create-payment-link.py activate` + saisie `OUI-FRANCK-A-VALIDE` |
+
+Les 3 liens (inactifs, page Stripe « lien désactivé » pour tout visiteur) :
+- 29 € : https://buy.stripe.com/aFa7sF3gB90F7tN33fcZa09
+- 39 € : https://buy.stripe.com/9B69AN6sN3Gl4hBbzLcZa0a
+- 49 € : https://buy.stripe.com/bJe00d8AV2Ch8xRcDPcZa0b
 
 ## Procédure en 2 phases (t_6808ea76)
 
-**Phase 1 — Création INACTIVE** (autorisée par le GO pricing, t_9864864c) :
+**Phase 1 — Création INACTIVE** (autorisée par le GO pricing, t_9864864c) — FAITE 2026-08-24 :
 ```bash
 cd /chemin/vers/citescan/stripe
 python3 create-payment-link.py create
-# Taper 'CREER-INACTIFS' — les 3 liens sont créés avec active=false :
-# aucun encaissement possible. Le script écrit /opt/data/citescan-links.json
-# (status: pending_activation) et affiche les STRIPE_PAYMENT_LINKS {29,39,49}
-# à renseigner dans offre.html et en/offer.html.
+# Taper 'CREER-INACTIFS'. NB : l'API Stripe REFUSE le paramètre `active`
+# à la création d'un Payment Link (parameter_unknown) — le script crée le
+# lien puis le désactive immédiatement via PaymentLink.update(active=False).
+# Écrit /opt/data/citescan-links.json (status: pending_activation).
+# Piège hôte : le module python `stripe` n'est PAS installable sur l'hôte
+# (pas de pip/ensurepip). Équivalent stdlib utilisé pour la création réelle :
+# /root/stripe-create-stdlib.py (mêmes TIERS/clé/format JSON, importés du
+# script canonique) + /root/stripe-cleanup-orphans.py.
 ```
 
 **Phase 2 — ACTIVATION (verrou Franck n°3, manuel)** :

@@ -104,8 +104,10 @@ check("3 payment links created", len(PaymentLink.created) == 3)
 check("amounts are 2900/3900/4900 EUR cents",
       [p["unit_amount"] for p in Price.created] == [2900, 3900, 4900]
       and all(p["currency"] == "eur" for p in Price.created))
-check("ALL links created with active=False (pending activation)",
-      all(c.get("active") is False for c in PaymentLink.created))
+check("create does NOT pass active at creation (Stripe API rejects it)",
+      all("active" not in c for c in PaymentLink.created))
+check("ALL links inactive right after create flow (update active=False)",
+      all(l.active is False for l in created_links.values()))
 check("3 distinct URLs",
       len({l.url for l in created_links.values()}) == 3)
 

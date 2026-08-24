@@ -164,7 +164,6 @@ def cmd_create(stripe) -> None:
             product=product.id, unit_amount=tier["price_cents"], currency=CURRENCY)
         link = stripe.PaymentLink.create(
             line_items=[{"price": price.id, "quantity": 1}],
-            active=False,  # ← PENDING ACTIVATION : verrou Franck n°3
             after_completion={"type": "redirect",
                               "redirect": {"url": SUCCESS_URL_FR}},
             consent_collection={"terms_of_service": "required"},
@@ -180,6 +179,10 @@ def cmd_create(stripe) -> None:
             },
             metadata=tier["metadata"],
         )
+        # L'API Stripe REFUSE le paramètre `active` à la création d'un
+        # Payment Link (parameter_unknown) : désactivation immédiate via
+        # update — PENDING ACTIVATION, verrou Franck n°3.
+        link = stripe.PaymentLink.update(link.id, active=False)
         print(f"✓ Palier {tier['eur']} € : {link.url}  ({link.id}) — INACTIF, "
               "en attente d'activation")
         links_json[link.url] = ["audit", f"Audit CiteScan {tier['eur']} €",
