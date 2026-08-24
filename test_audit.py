@@ -208,6 +208,7 @@ _AGENT_OK = {
 }
 
 _fc = _FakeClient([_FakeResp(200, _AGENT_OK)])
+os.environ["PERPLEXITY_API_KEY"] = "test-key"  # lue dynamiquement par engines.py
 audit.PERPLEXITY_API_KEY = "test-key"
 res = asyncio.run(audit._agent_query(_fc, "ma requête", lang="fr"))
 check("agent-api: ok", res["ok"] is True and res["error"] is None)
@@ -250,6 +251,7 @@ try:
 finally:
     audit.asyncio.sleep = _orig_sleep
 audit.PERPLEXITY_API_KEY = ""
+os.environ.pop("PERPLEXITY_API_KEY", None)
 
 # --- Rapport niveau 2 (t_a857e039) ---
 
@@ -393,6 +395,87 @@ check("run_paid_audit: cost_usd mesuré avec budget_max",
 check("run_paid_audit: roadmap présente même injoignable",
       bool((r2.get("deliverables") or {}).get("roadmap", {}).get("j30")))
 audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY = _old_or, _old_px
+
+# --- Multi-moteurs (t_9864864c) : agrégation inter-moteurs avec mocks --------
+import engines as _eng  # noqa: E402
+
+# clés factices pour rendre les 4 moteurs "disponibles"
+for _k in ("PERPLEXITY_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY",
+           "ANTHROPIC_API_KEY"):
+    os.environ[_k] = "test"
+
+# moteur simulé : perplexity cite le site sur q1 seulement, gemini jamais,
+# chatgpt cite partout, claude en panne totale (HTTP 500) -> résultats PARTIELS
+async def _fake_query_engine(name, client, prompt, lang="en"):
+    if name == "claude":
+        return {"ok": False, "answer": "", "citations": [], "cost": 0.0,
+                "error": "HTTP 500"}
+    cited_urls = {
+        "perplexity": ["https://example.fr/page"] if "meilleur" in prompt else ["https://concurrent.fr/"],
+        "gemini": ["https://concurrent.fr/"],
+        "chatgpt": ["https://example.fr/page", "https://concurrent.fr/"],
+    }[name]
+    return {"ok": True, "answer": f"Réponse de {name} [1]. Suite.",
+            "citations": cited_urls, "cost": 0.01, "error": None}
+
+_orig_qe = _eng.query_engine
+_eng.query_engine = _fake_query_engine
+_sleeps2 = []
+async def _fake_sleep2(s):
+    _sleeps2.append(s)
+_orig_sleep2 = audit.asyncio.sleep
+audit.asyncio.sleep = _fake_sleep2
+try:
+    c4 = asyncio.run(audit.citation_audit(
+        "https://example.fr", "logiciels en ligne", "fr",
+        ["perplexity", "gemini", "chatgpt", "claude"]))
+finally:
+    _eng.query_engine = _orig_qe
+    audit.asyncio.sleep = _orig_sleep2
+    for _k in ("PERPLEXITY_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY",
+               "ANTHROPIC_API_KEY"):
+        os.environ.pop(_k, None)
+
+check("multi: 4 moteurs exécutés", c4["engines_run"] == ["perplexity", "gemini", "chatgpt", "claude"])
+check("multi: total = 15 requêtes x 4 moteurs = 60 cellules", c4["total"] == 60, str(c4["total"]))
+check("multi: cited_count agrégé en cellules (15 chatgpt + 3 perplexity)",
+      c4["cited_count"] == 18, str(c4["cited_count"]))
+check("multi: statut partial (claude en panne)", c4["status"] == "partial")
+check("multi: résultat par moteur conservé",
+      set(c4["engines"]) == {"perplexity", "gemini", "chatgpt", "claude"} and
+      c4["engines"]["claude"]["status"] == "failed" and
+      c4["engines"]["chatgpt"]["cited_count"] == 15)
+check("multi: coût par moteur mesuré (0.15 par moteur ok, 0 pour claude)",
+      abs(c4["engines"]["chatgpt"]["cost_usd"] - 0.15) < 1e-9 and
+      c4["engines"]["claude"]["cost_usd"] == 0.0 and
+      abs(c4["cost_usd"] - 0.45) < 1e-9, str(c4["cost_usd"]))
+check("multi: matrice requête x moteur avec états yes/no/error",
+      len(c4["matrix"]) == 15 and
+      c4["matrix"][0]["by_engine"]["chatgpt"] == "yes" and
+      c4["matrix"][0]["by_engine"]["gemini"] == "no" and
+      c4["matrix"][0]["by_engine"]["claude"] == "error")
+check("multi: requêtes agrégées conservent by_engine + verbatim",
+      c4["queries"][0]["by_engine"]["perplexity"] == "yes" and
+      "Réponse de" in c4["queries"][0]["verbatim"])
+check("multi: concurrents fusionnés inter-moteurs",
+      any(c["domain"] == "concurrent.fr" for c in c4["competitors"]))
+_no_key = asyncio.run(audit.citation_audit("https://example.fr", "kw", "fr", ["chatgpt"]))
+check("multi: aucune clé -> unavailable + engines_missing explicite",
+      _no_key["status"] == "unavailable" and
+      "chatgpt" in _no_key["engines_missing"], str(_no_key["engines_missing"]))
+# moteur demandé dont la clé manque : audit partiel, jamais d'exception
+os.environ["PERPLEXITY_API_KEY"] = "test"
+_eng.query_engine = _fake_query_engine
+try:
+    c_missing = asyncio.run(audit.citation_audit(
+        "https://example.fr", "logiciels en ligne", "fr", ["chatgpt"]))
+finally:
+    _eng.query_engine = _orig_qe
+    os.environ.pop("PERPLEXITY_API_KEY", None)
+check("multi: moteur sans clé écarté, base repliée sur disponibles",
+      c_missing["engines_run"] == ["perplexity"] and
+      "chatgpt" in c_missing["engines_missing"] and
+      c_missing["status"] == "partial", str(c_missing["engines_run"]))
 
 print(f"\nUNIT: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)

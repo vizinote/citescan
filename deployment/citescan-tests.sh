@@ -273,6 +273,114 @@ PDF=$(curl -s -o /tmp/t_rep.pdf -w "%{http_code}" "$BASE/rapports/$TOKFR/pdf")
 ok "PDF FR -> 200" "$PDF" "200"
 has "PDF FR : vrai PDF" "$(head -c 5 /tmp/t_rep.pdf)" "%PDF-"
 
+# --- 5a-ter. MULTI-MOTEURS (t_9864864c) : pages offre + rapport multi ---
+echo "--- multi-moteurs : pages offre (selecteur + verrou) ---"
+ok "offre FR -> 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/offre.html")" "200"
+ok "offre EN -> 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/en/offer.html")" "200"
+OFFR=$(curl -s "$BASE/offre.html")
+OFFEN=$(curl -s "$BASE/en/offer.html")
+has "offre FR : selecteur present" "$OFFR" 'id="engine-select"'
+has "offre FR : Perplexity+Gemini coches verrouilles" "$OFFR" 'checked disabled'
+has "offre FR : extras chatgpt+claude" "$OFFR" 'class="eng-extra" value="chatgpt"'
+has "offre FR : extra claude" "$OFFR" 'class="eng-extra" value="claude"'
+has "offre FR : grille JS 29/39/49" "$OFFR" 'PRICE_LADDER = {0: 29, 1: 39, 2: 49}'
+has "offre FR : prix dynamique id" "$OFFR" 'id="offer-price"'
+has "offre FR : CTA verrouille" "$OFFR" 'btn--disabled'
+hasnot "offre FR : aucun lien Stripe actif" "$OFFR" 'buy.stripe.com'
+has "offre EN : selecteur present" "$OFFEN" 'id="engine-select"'
+has "offre EN : grille JS" "$OFFEN" 'PRICE_LADDER'
+hasnot "offre EN : aucun lien Stripe actif" "$OFFEN" 'buy.stripe.com'
+ok "style.css sert engine-select" "$(curl -s "$BASE/assets/style.css" | grep -c 'engine-select')" "6"
+
+echo "--- multi-moteurs : rapport multi (fixture, sans cout) ---"
+cat > /tmp/t_audit_multi.json <<'EOF'
+{"domain": "https://boulangerie-martin.fr", "lang": "fr", "keyword": "boulangerie artisanale",
+ "score": {"total": 55, "technical": 55, "citation": 25, "mode": "full"},
+ "technical": {"score": 55, "word_count": 180, "checks": {
+   "robots": {"status": "warn", "points": 15, "detail": "robots.txt introuvable — les bots IA sont autorisés par défaut", "bots": {}},
+   "extract": {"status": "warn", "points": 20, "detail": "contenu textuel un peu mince"},
+   "jsonld": {"status": "warn", "points": 5, "detail": "aucune donnée structurée JSON-LD"},
+   "eeat": {"status": "warn", "points": 10, "detail": "dates de publication présentes",
+            "signals": ["dates de publication présentes"], "missing": [],
+            "signal_codes": ["dates"], "missing_codes": []}}},
+ "citations": {"status": "partial", "queries_ok": 4, "total": 6, "cited_count": 1,
+   "queries": [
+     {"query": "Quel est le meilleur boulangerie artisanale ?", "cited": true, "error": null,
+      "citations": ["capterra.com"], "verbatim": "Perplexity cite cette boulangerie en premier.",
+      "by_engine": {"perplexity": "yes", "gemini": "no", "claude": "error"}},
+     {"query": "Où acheter boulangerie artisanale en ligne ?", "cited": false, "error": null,
+      "citations": ["capterra.com"], "verbatim": "Les annuaires dominent les réponses.",
+      "by_engine": {"perplexity": "no", "gemini": "no", "claude": "error"}}],
+   "competitors": [{"domain": "capterra.com", "count": 3}],
+   "competitor_urls": {"capterra.com": "https://capterra.com/x"},
+   "cost_usd": 0.02, "engine": "multi:perplexity,gemini,claude",
+   "engines_run": ["perplexity", "gemini", "claude"],
+   "engines_missing": ["chatgpt"],
+   "matrix": [
+     {"query": "Quel est le meilleur boulangerie artisanale ?",
+      "by_engine": {"perplexity": "yes", "gemini": "no", "claude": "error"}},
+     {"query": "Où acheter boulangerie artisanale en ligne ?",
+      "by_engine": {"perplexity": "no", "gemini": "no", "claude": "error"}}],
+   "engines": {
+     "perplexity": {"status": "ok", "queries_ok": 2, "total": 2, "cited_count": 1,
+       "queries": [
+         {"query": "Quel est le meilleur boulangerie artisanale ?", "cited": true, "error": null,
+          "citations": ["capterra.com"], "verbatim": "Perplexity cite cette boulangerie en premier."},
+         {"query": "Où acheter boulangerie artisanale en ligne ?", "cited": false, "error": null,
+          "citations": ["capterra.com"], "verbatim": "Les annuaires dominent les réponses."}],
+       "competitors": [{"domain": "capterra.com", "count": 2}], "competitor_urls": {},
+       "cost_usd": 0.01, "engine": "perplexity", "engine_label": "Perplexity"},
+     "gemini": {"status": "ok", "queries_ok": 2, "total": 2, "cited_count": 0,
+       "queries": [
+         {"query": "Quel est le meilleur boulangerie artisanale ?", "cited": false, "error": null,
+          "citations": ["capterra.com"], "verbatim": "Gemini privilégie les comparatifs locaux."},
+         {"query": "Où acheter boulangerie artisanale en ligne ?", "cited": false, "error": null,
+          "citations": [], "verbatim": "Gemini ne cite pas cette boulangerie."}],
+       "competitors": [], "competitor_urls": {},
+       "cost_usd": 0.01, "engine": "gemini", "engine_label": "Gemini"},
+     "claude": {"status": "failed", "queries_ok": 0, "total": 2, "cited_count": 0,
+       "queries": [
+         {"query": "Quel est le meilleur boulangerie artisanale ?", "cited": false,
+          "error": "HTTP 500", "citations": [], "verbatim": ""},
+         {"query": "Où acheter boulangerie artisanale en ligne ?", "cited": false,
+          "error": "HTTP 500", "citations": [], "verbatim": ""}],
+       "competitors": [], "competitor_urls": {},
+       "cost_usd": 0.0, "engine": "claude", "engine_label": "Claude"}}},
+ "cms": {"cms": "wordpress", "label": "WordPress", "instruction": "WordPress détecté."},
+ "platforms": [],
+ "deliverables": {"pourquoi_cites": [], "actions_contenu": [], "faq": [], "faq_jsonld": "",
+   "roadmap": {"j30": ["Publier la FAQ"], "j60": ["Créer le guide"], "j90": ["S'inscrire"]},
+   "roadmap_source": "v4-pro", "competitor_pages": [], "writer": "deepseek/deepseek-v4-pro-0813"},
+ "action_plan": [{"action": "Ajouter des données structurées JSON-LD.", "impact": 8, "effort": 3, "priority_score": 2.7, "rank": 1}],
+ "synthese": "Rapport multi-moteurs de test.",
+ "writer": "deepseek/deepseek-v4-pro-0813",
+ "engines": ["perplexity", "gemini", "claude"],
+ "mode": "full", "generated_at": "2026-08-24T00:00:00Z"}
+EOF
+RMULTI=$(curl -s -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
+      -d "{\"lang\":\"fr\",\"audit\":$(cat /tmp/t_audit_multi.json)}" "$BASE/api/report")
+TOKM=$(printf '%s' "$RMULTI" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
+ok "rapport multi cree" "$([ -n "$TOKM" ] && echo oui)" "oui"
+HM=$(curl -s "$BASE/rapports/$TOKM")
+printf '%s' "$HM" > /tmp/t_rep_multi.html
+has "multi : section visibilite par moteur" "$HM" "Visibilité par moteur d'IA"
+has "multi : colonnes moteurs" "$HM" "<th>Perplexity</th><th>Gemini</th><th>Claude</th>"
+has "multi : section ecarts" "$HM" "Écarts entre moteurs"
+has "multi : ecart cite perplexity pas gemini" "$HM" "cité par Perplexity mais pas par Gemini"
+has "multi : verbatims par moteur" "$HM" "verbatims par moteur"
+has "multi : verbatim perplexity" "$HM" "Perplexity cite cette boulangerie en premier."
+has "multi : verbatim gemini" "$HM" "Gemini privilégie les comparatifs locaux."
+has "multi : moteur en panne mentionne" "$HM" "Claude était indisponible lors de l'audit"
+has "multi : moteur sans cle mentionne" "$HM" "ChatGPT"
+has "multi : mesures requete x moteur" "$HM" "mesures requête × moteur"
+ok "rapport multi : aucun trou (texte gele)" "$(noholes /tmp/t_rep_multi.html)" "OK"
+PDFM=$(curl -s -o /tmp/t_rep_multi.pdf -w "%{http_code}" "$BASE/rapports/$TOKM/pdf")
+ok "rapport multi : PDF -> 200" "$PDFM" "200"
+has "rapport multi : vrai PDF" "$(head -c 5 /tmp/t_rep_multi.pdf)" "%PDF-"
+
+# API : parametre engines accepte (audit fixture multi relu cote API)
+has "api report multi : token + rescan" "$RMULTI" "url_rescan"
+
 # --- 5b. NON-REGRESSION SECTEUR (pipeline reel brozapi.com, ~0,20 $ Sonar+V4) ---
 # Recette t_ffc46988 : le rapport sur brozapi.com (studio de LOGICIELS) ne doit
 # citer AUCUN site de bricolage/outillage et le secteur affiche doit etre la

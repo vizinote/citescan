@@ -264,6 +264,64 @@ def _build_context(report: dict) -> dict:
     cms = audit.get("cms") or {}
     rescan = report.get("rescan") or {}
 
+    # --- multi-moteurs (t_9864864c) -----------------------------------------
+    # Sections par moteur, matrice requête×moteur, analyse des écarts. Avec un
+    # seul moteur, le gabarit historique est rendu à l'identique.
+    import engines as _engines_mod
+    engines_map = citations.get("engines") or {}
+    engine_names = citations.get("engines_run") or list(engines_map)
+
+    def _eng_label(n: str) -> str:
+        r = engines_map.get(n) or {}
+        return (r.get("engine_label")
+                or (_engines_mod.ENGINES.get(n) or {}).get("label") or n)
+
+    engine_cols = [{"name": n, "label": _eng_label(n)} for n in engine_names]
+    engines_data = []
+    for n in engine_names:
+        r = engines_map.get(n) or {}
+        engines_data.append({
+            "name": n, "label": _eng_label(n),
+            "status": r.get("status", "failed"),
+            "cited_count": r.get("cited_count") or 0,
+            "total": r.get("total") or 0,
+            "queries": r.get("queries") or [],
+        })
+    matrix = citations.get("matrix") or []
+    # Moteurs demandés mais sans clé + moteurs dont TOUTES les requêtes ont
+    # échoué : mention explicite « moteur X indisponible lors de l'audit ».
+    missing_labels = [_eng_label(n)
+                      for n in (citations.get("engines_missing") or [])]
+    failed_labels = [_eng_label(n) for n in engine_names
+                     if (engines_map.get(n) or {}).get("status") == "failed"]
+    engines_unavailable = missing_labels + [l for l in failed_labels
+                                            if l not in missing_labels]
+
+    def _join_labels(labels: list) -> str:
+        if lang == "fr":
+            return " et ".join([", ".join(labels[:-1]), labels[-1]]) \
+                if len(labels) > 1 else (labels[0] if labels else "")
+        return " and ".join([", ".join(labels[:-1]), labels[-1]]) \
+            if len(labels) > 1 else (labels[0] if labels else "")
+
+    engines_summary = _join_labels([c["label"] for c in engine_cols])
+    # Analyse des écarts (déterministe, 0 appel LLM) : requêtes où les moteurs
+    # ne s'accordent pas sur la citation du site.
+    gaps = []
+    for row in matrix:
+        vals = row.get("by_engine") or {}
+        yes = [_eng_label(n) for n, v in vals.items() if v == "yes"]
+        no = [_eng_label(n) for n, v in vals.items() if v == "no"]
+        if yes and no:
+            if lang == "fr":
+                gaps.append(f"« {row['query']} » : votre site est cité par "
+                            f"{_join_labels(yes)} mais pas par {_join_labels(no)}.")
+            else:
+                gaps.append(f"\"{row['query']}\": your site is cited by "
+                            f"{_join_labels(yes)} but not by {_join_labels(no)}.")
+    n_queries = max((r.get("total") or 0) for r in engines_map.values()) \
+        if engines_map else (citations.get("total") or 0)
+
     # Date d'activation du re-scan : si la ligne DB n'a pas d'eligible_at
     # (ne doit pas arriver, mais un trou dans la phrase est inacceptable a
     # 29 EUR — recette t_72143dd9), on recalcule J+30 depuis created_at.
@@ -295,6 +353,15 @@ def _build_context(report: dict) -> dict:
         "citations_total": citations.get("total") or 0,
         "queries": citations.get("queries") or [],
         "competitors": citations.get("competitors") or [],
+        # multi-moteurs (t_9864864c)
+        "engine_cols": engine_cols,
+        "engines_data": engines_data,
+        "engines_summary": engines_summary,
+        "engines_unavailable": engines_unavailable,
+        "multi_engines": len(engine_cols) > 1,
+        "matrix": matrix,
+        "gaps": gaps,
+        "n_queries": n_queries,
         "action_plan": audit.get("action_plan") or [],
         "top_actions": (audit.get("action_plan") or [])[:3],
         # rapport niveau 2 (t_a857e039)

@@ -310,90 +310,26 @@ def build_queries(keyword: str, lang: str) -> list:
     return [t.format(kw=keyword, year=year) for t in QUERY_TEMPLATES[lang]][:N_QUERIES]
 
 
-# ---------------------------------------------------------------- perplexity
+# ---------------------------------------------------------------- moteurs IA (t_9864864c)
+#
+# Les adaptateurs vivent désormais dans engines.py (couche d'abstraction
+# multi-moteurs : Perplexity, Gemini, ChatGPT, Claude — + Mistral désactivé).
+# _SONAR_SYSTEM est conservé ici comme alias de compatibilité (le prompt de
+# langue canonique est engines.SYSTEM_PROMPT).
 
-# Force the answer language (carte recette 2026-08-24: Sonar answered in
-# English whatever the journey language, polluting FR reports/citations).
-_SONAR_SYSTEM = {
-    "fr": "Tu es un assistant de recherche francophone. Réponds exclusivement en "
-          "français, de façon factuelle et concise, et privilégie les sources "
-          "francophones pertinentes.",
-    "en": "You are an English-speaking research assistant. Answer exclusively in "
-          "English, factually and concisely, and prefer relevant English-language "
-          "sources.",
-}
+import engines
+
+_SONAR_SYSTEM = engines.SYSTEM_PROMPT
 
 
 async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                        lang: str = "en") -> dict:
-    """One Perplexity Agent API call (model perplexity/sonar + web_search) with
-    429 retry/backoff (Retry-After honored). Citations = union of the URLs
-    cited in the answer annotations and the retrieved search_results sources.
-    The answer text is kept ("answer") to show the client VERBATIMS of what the
-    AI actually says about their sector (rapport niveau 2, t_a857e039).
-    Note: structured output (JSON schema) was evaluated and intentionally NOT
-    applied here — citation extraction reads verifiable URLs from
-    annotations/search_results, never model-generated text, so a schema would
-    only add failure modes without changing the client-facing output."""
-    system = _SONAR_SYSTEM.get(lang, _SONAR_SYSTEM["en"])
-    delay = 4.0
-    for attempt in range(retries + 1):
-        try:
-            r = await client.post(PERPLEXITY_AGENT_URL, json={
-                "model": PERPLEXITY_AGENT_MODEL,
-                "input": query,
-                "instructions": system,
-                "language_preference": lang,
-                "tools": [{"type": "web_search"}],
-                # 640 suffit largement : seules 1-2 phrases (verbatim) et les
-                # URLs citées sont utilisées — réponses plus courtes = audit
-                # ~2x plus rapide et moins cher (constat prod t_a857e039).
-                "max_output_tokens": 640,
-            }, headers={"Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-                        "Content-Type": "application/json"})
-            if r.status_code == 429 and attempt < retries:
-                retry_after = r.headers.get("Retry-After")
-                wait = delay
-                if retry_after:
-                    try:
-                        # borné : un Retry-After élevé sous charge parallèle ne
-                        # doit pas faire dérailler tout l'audit
-                        wait = min(max(wait, float(retry_after)), 30.0)
-                    except ValueError:
-                        pass
-                await asyncio.sleep(wait)
-                delay *= 2
-                continue
-            if r.status_code != 200:
-                return {"query": query, "ok": False, "citations": [], "answer": "",
-                        "cost": 0.0, "error": f"HTTP {r.status_code}"}
-            data = r.json()
-            urls = []
-            answer_parts = []
-            for item in data.get("output", []) or []:
-                itype = item.get("type")
-                if itype == "search_results":
-                    urls += [x.get("url") for x in item.get("results", []) or []
-                             if x.get("url")]
-                elif itype == "message":
-                    for part in item.get("content", []) or []:
-                        if part.get("text"):
-                            answer_parts.append(part["text"])
-                        for ann in part.get("annotations", []) or []:
-                            if ann.get("url"):
-                                urls.append(ann["url"])
-            cost = ((data.get("usage") or {}).get("cost") or {}).get("total_cost") or 0.0
-            return {"query": query, "ok": True,
-                    "citations": list(dict.fromkeys(urls)),
-                    "answer": " ".join(answer_parts).strip(),
-                    "cost": float(cost), "error": None}
-        except Exception as e:
-            if attempt < retries:
-                await asyncio.sleep(delay)
-                delay *= 2
-                continue
-            return {"query": query, "ok": False, "citations": [], "answer": "",
-                    "cost": 0.0, "error": str(e)[:200]}
+    """Compatibilité : un appel Perplexity via la couche engines (utilisé par
+    le garde-fou secteur). Citations = union des URLs des annotations et des
+    search_results. L'answer est conservée pour les VERBATIMS (t_a857e039)."""
+    res = await engines.query_engine("perplexity", client, query, lang)
+    res["query"] = query
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -466,31 +402,24 @@ def _verbatim(text: str, max_chars: int = 300) -> str:
     return out
 
 
-async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
-    """15 Sonar queries; per query: client cited? competitors cited? verbatim?"""
-    if not PERPLEXITY_API_KEY:
-        reason = ("PERPLEXITY_API_KEY non définie — mode dégradé (audit technique seul)"
-                  if lang == "fr" else
-                  "PERPLEXITY_API_KEY not set — degraded mode (technical audit only)")
-        return {"status": "unavailable", "reason": reason,
-                "queries": [], "cited_count": 0, "total": 0, "competitors": []}
-
-    queries = build_queries(keyword, lang)
-    target = _host_of(domain)
-    timeout = httpx.Timeout(45.0)
-    # sequential calls (small pause) to stay under Perplexity RPM limits;
-    # gather() fired 15 concurrent requests and reliably triggered HTTP 429.
+async def _engine_citation_run(name: str, queries: list, target: str,
+                               lang: str) -> dict:
+    """Les 15 requêtes sur UN moteur : par requête, le site est-il cité ?
+    Quels concurrents ? Verbatim ? Coût mesuré. Ne lève jamais d'exception :
+    un moteur en panne produit des lignes en erreur (résultats partiels)."""
+    timeout = httpx.Timeout(engines.ENGINE_TIMEOUT + 10.0)
     results = []
     async with httpx.AsyncClient(timeout=timeout) as client:
         for q in queries:
-            results.append(await _agent_query(client, q, lang=lang))
+            res = await engines.query_engine(name, client, q, lang)
+            res["query"] = q
+            results.append(res)
+            # appels séquentiels (petite pause) pour rester sous les limites
+            # RPM des API ; gather() déclenchait des HTTP 429 fiables.
             await asyncio.sleep(0.8)
 
-    per_query = []
-    cited_count = 0
-    ok_count = 0
-    comp_counter = {}
-    comp_urls = {}
+    per_query, cited_count, ok_count = [], 0, 0
+    comp_counter, comp_urls = {}, {}
     for res in results:
         if not res["ok"]:
             per_query.append({"query": res["query"], "cited": False,
@@ -506,8 +435,8 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
         for h in comps:
             comp_counter[h] = comp_counter.get(h, 0) + 1
             if h not in comp_urls:
-                # first full cited URL for this competitor (used by the gap
-                # analysis to fetch the exact page the AI cited)
+                # première URL complète citée pour ce concurrent (la gap
+                # analysis fetch la page exacte citée par l'IA)
                 comp_urls[h] = next((c for c in res["citations"]
                                      if _host_of(c) == h), f"https://{h}")
         per_query.append({"query": res["query"], "cited": cited,
@@ -517,12 +446,113 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     competitors = [{"domain": d, "count": c} for d, c in
                    sorted(comp_counter.items(), key=lambda x: -x[1])][:10]
     status = "ok" if ok_count == len(queries) else ("partial" if ok_count else "failed")
-    cost_usd = round(sum(r.get("cost", 0.0) for r in results), 5)
     return {"status": status, "queries_ok": ok_count, "total": len(queries),
             "cited_count": cited_count, "queries": per_query,
             "competitors": competitors, "competitor_urls": comp_urls,
-            "cost_usd": cost_usd,
-            "engine": "agent-api:perplexity/sonar"}
+            "cost_usd": round(sum(r.get("cost", 0.0) for r in results), 5),
+            "engine": name, "engine_label": engines.ENGINES[name]["label"]}
+
+
+async def citation_audit(domain: str, keyword: str, lang: str,
+                         engines_sel: "list | None" = None) -> dict:
+    """Audit de citations multi-moteurs (t_9864864c) : les 15 requêtes buyer-
+    intent sont posées à CHAQUE moteur sélectionné (défaut : tous les moteurs
+    dont la clé est présente). Un moteur en panne ne fait JAMAIS échouer
+    l'audit : ses lignes passent en erreur et le rapport mentionne
+    explicitement son indisponibilité.
+
+    Structure retournée : les champs agrégés historiques (queries, cited_count,
+    competitors...) restent au niveau racine pour compatibilité (score, plan,
+    rédaction V4), plus :
+      - engines          : {name: résultat complet par moteur}
+      - engines_run      : moteurs réellement interrogés
+      - engines_missing  : moteurs demandés sans clé (mention explicite)
+      - matrix           : par requête, cited/error par moteur (tableau
+                           comparatif du rapport)
+    Les compteurs agrégés sont en CELLULES requête×moteur : 15 requêtes sur
+    4 moteurs = 60 mesures.
+    """
+    if engines_sel:
+        selected = engines.normalize_selection(engines_sel)
+        missing = [e for e in engines.normalize_selection(engines_sel)
+                   if not engines.engine_available(e)]
+        runnable = [e for e in selected if engines.engine_available(e)]
+    else:
+        selected = runnable = engines.available_engines()
+        missing = []
+
+    if not runnable:
+        keys = ", ".join(engines.ENGINES[e]["env_key"]
+                         for e in engines.ENGINES if engines.ENGINES[e]["enabled"])
+        reason = (f"Aucun moteur IA disponible — clés API absentes ({keys}) : "
+                  f"mode dégradé (audit technique seul)"
+                  if lang == "fr" else
+                  f"No AI engine available — missing API keys ({keys}): "
+                  f"degraded mode (technical audit only)")
+        return {"status": "unavailable", "reason": reason,
+                "queries": [], "cited_count": 0, "total": 0, "competitors": [],
+                "engines": {}, "engines_run": [], "engines_missing": missing,
+                "matrix": [], "cost_usd": 0.0}
+
+    queries = build_queries(keyword, lang)
+    target = _host_of(domain)
+    per_engine = {}
+    for name in runnable:
+        per_engine[name] = await _engine_citation_run(name, queries, target, lang)
+
+    # --- agrégation inter-moteurs ------------------------------------------
+    # Cellule = (requête, moteur). cited/total comptent des cellules ; le
+    # statut agrégé est "ok" si tous les moteurs ont répondu en intégralité,
+    # "partial" dès qu'une cellule est en erreur, "failed" si rien n'a répondu.
+    engine_names = list(per_engine)
+    total_cells = sum(r["total"] for r in per_engine.values())
+    cited_cells = sum(r["cited_count"] for r in per_engine.values())
+    ok_cells = sum(r["queries_ok"] for r in per_engine.values())
+
+    comp_counter, comp_urls = {}, {}
+    for r in per_engine.values():
+        for c in r["competitors"]:
+            comp_counter[c["domain"]] = comp_counter.get(c["domain"], 0) + c["count"]
+        for h, u in (r.get("competitor_urls") or {}).items():
+            comp_urls.setdefault(h, u)
+    competitors = [{"domain": d, "count": c} for d, c in
+                   sorted(comp_counter.items(), key=lambda x: -x[1])][:10]
+
+    agg_queries, matrix = [], []
+    for i, q in enumerate(queries):
+        by_engine, union_hosts, cited_any, verbatim = {}, [], False, ""
+        for name in engine_names:
+            row = per_engine[name]["queries"][i]
+            by_engine[name] = ("error" if row["error"]
+                               else ("yes" if row["cited"] else "no"))
+            if row["error"]:
+                continue
+            cited_any = cited_any or row["cited"]
+            for h in row["citations"]:
+                if h not in union_hosts:
+                    union_hosts.append(h)
+            if not verbatim and row["verbatim"]:
+                verbatim = row["verbatim"]
+        agg_queries.append({"query": q, "cited": cited_any, "error": None,
+                            "citations": union_hosts[:5], "verbatim": verbatim,
+                            "by_engine": by_engine})
+        matrix.append({"query": q, "by_engine": by_engine})
+
+    if ok_cells == total_cells and not missing:
+        status = "ok"
+    elif ok_cells:
+        status = "partial"
+    else:
+        status = "failed"
+
+    return {"status": status, "queries_ok": ok_cells, "total": total_cells,
+            "cited_count": cited_cells, "queries": agg_queries,
+            "competitors": competitors, "competitor_urls": comp_urls,
+            "cost_usd": round(sum(r["cost_usd"] for r in per_engine.values()), 5),
+            "engine": "multi:" + ",".join(engine_names) if len(engine_names) > 1
+                      else per_engine[engine_names[0]]["engine"],
+            "engines": per_engine, "engines_run": engine_names,
+            "engines_missing": missing, "matrix": matrix}
 
 
 # ---------------------------------------------------------------- sector detection (V4 pro + Sonar guardrail)
@@ -1531,8 +1561,11 @@ async def generate_deliverables(audit_data: dict, signals: dict, comp_pages: lis
 
 # ---------------------------------------------------------------- orchestration
 
-async def run_paid_audit(url: str, lang: str = "en") -> dict:
-    """Full paid-audit pipeline. Never raises; degraded sections are explicit."""
+async def run_paid_audit(url: str, lang: str = "en",
+                         engines_sel: "list | None" = None) -> dict:
+    """Full paid-audit pipeline. Never raises; degraded sections are explicit.
+    engines_sel : moteurs demandés (défaut None = tous ceux dont la clé est
+    présente). Le re-scan J+30 repasse les moteurs de l'audit initial."""
     _meter_reset()
     parsed = urlparse(url if url.startswith("http") else f"https://{url}")
     domain = f"https://{parsed.netloc.lower()}"
@@ -1569,7 +1602,7 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         sector_info = {"keyword": domain, "validated": None, "attempts": 0,
                        "method": "no-page-content", "history": []}
     keyword = sector_info["keyword"]
-    citations = await citation_audit(domain, keyword, lang)
+    citations = await citation_audit(domain, keyword, lang, engines_sel)
     score = compute_score(technical, citations)
     plan = build_action_plan(technical, citations, lang) if not fetch_error else []
 
@@ -1599,6 +1632,9 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         "cms": cms,
         "platforms": platforms,
         "mode": score["mode"],
+        # moteurs réellement interrogés — persistés pour que le re-scan J+30
+        # relance exactement les mêmes (t_9864864c)
+        "engines": citations.get("engines_run") or [],
         "perplexity_available": bool(PERPLEXITY_API_KEY),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -1618,15 +1654,31 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         result["synthese"] = None
         result["writer"] = "fallback-library" if OPENROUTER_API_KEY else "no-openrouter-key"
 
-    # Garde-fou budget (t_a857e039) : coût total mesuré par audit.
+    # Garde-fou budget (t_a857e039 + t_9864864c) : coût total mesuré par
+    # audit, avec ventilation PAR MOTEUR. Alerte structurée dans les logs si
+    # le coût total dépasse 1 $ (seuil carte multi-moteurs).
     meter = _meter_read()
     or_cost = round(meter["cost"], 5)
     sonar_cost = round(citations.get("cost_usd", 0.0) or 0.0, 5)
+    per_engine_cost = {name: (r.get("cost_usd") or 0.0)
+                       for name, r in (citations.get("engines") or {}).items()}
+    total_cost = round(sonar_cost + or_cost, 5)
+    cost_alert = total_cost > 1.00
     result["cost_usd"] = {
         "citations": sonar_cost,
+        "per_engine": per_engine_cost,
         "openrouter": or_cost,
         "openrouter_calls": meter["calls"],
-        "total": round(sonar_cost + or_cost, 5),
+        "total": total_cost,
         "budget_max": 0.50,
+        "alert_over_1usd": cost_alert,
     }
+    log_line = {"event": "audit_cost", "domain": domain, "lang": lang,
+                "engines": result["engines"], "per_engine": per_engine_cost,
+                "openrouter": or_cost, "total": total_cost}
+    if cost_alert:
+        log_line["alert"] = "COST_OVER_1USD"
+        print(f"COST_ALERT {json.dumps(log_line, ensure_ascii=False)}")
+    else:
+        print(f"AUDIT_COST {json.dumps(log_line, ensure_ascii=False)}")
     return result

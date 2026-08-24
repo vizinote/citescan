@@ -391,5 +391,130 @@ class TestNoHoles(unittest.TestCase):
                                     f"{lbl}: trou après 'à partir du'")
 
 
+# ---------------------------------------------------------------- multi-moteurs (t_9864864c)
+
+def sample_audit_multi():
+    """Audit 4 moteurs : claude en panne (résultats partiels), chatgpt demandé
+    mais sans clé au moment de l'audit (engines_missing)."""
+    a = sample_audit()
+    queries_p = [
+        {"query": "Quel est le meilleur logiciel X ?", "cited": True,
+         "error": None, "citations": ["concurrent.fr"],
+         "verbatim": "Perplexity cite le site en premier."},
+        {"query": "Où acheter X en ligne ?", "cited": False,
+         "error": None, "citations": ["concurrent.fr"],
+         "verbatim": "Perplexity cite surtout les annuaires."},
+    ]
+    queries_g = [
+        {"query": "Quel est le meilleur logiciel X ?", "cited": False,
+         "error": None, "citations": ["annuaire.fr"],
+         "verbatim": "Gemini privilégie les comparatifs."},
+        {"query": "Où acheter X en ligne ?", "cited": False,
+         "error": None, "citations": [],
+         "verbatim": "Gemini ne cite pas ce site."},
+    ]
+    queries_c_fail = [
+        {"query": q["query"], "cited": False, "error": "HTTP 500",
+         "citations": [], "verbatim": ""} for q in queries_p
+    ]
+    a["citations"] = {
+        "status": "partial", "queries_ok": 4, "total": 6, "cited_count": 1,
+        "queries": [
+            {"query": "Quel est le meilleur logiciel X ?", "cited": True,
+             "error": None, "citations": ["concurrent.fr"],
+             "verbatim": "Perplexity cite le site en premier.",
+             "by_engine": {"perplexity": "yes", "gemini": "no", "claude": "error"}},
+            {"query": "Où acheter X en ligne ?", "cited": False, "error": None,
+             "citations": ["concurrent.fr"],
+             "verbatim": "Perplexity cite surtout les annuaires.",
+             "by_engine": {"perplexity": "no", "gemini": "no", "claude": "error"}},
+        ],
+        "competitors": [{"domain": "concurrent.fr", "count": 3}],
+        "competitor_urls": {"concurrent.fr": "https://concurrent.fr/x"},
+        "cost_usd": 0.02,
+        "engine": "multi:perplexity,gemini,claude",
+        "engines_run": ["perplexity", "gemini", "claude"],
+        "engines_missing": ["chatgpt"],
+        "matrix": [
+            {"query": "Quel est le meilleur logiciel X ?",
+             "by_engine": {"perplexity": "yes", "gemini": "no", "claude": "error"}},
+            {"query": "Où acheter X en ligne ?",
+             "by_engine": {"perplexity": "no", "gemini": "no", "claude": "error"}},
+        ],
+        "engines": {
+            "perplexity": {"status": "ok", "queries_ok": 2, "total": 2,
+                           "cited_count": 1, "queries": queries_p,
+                           "competitors": [{"domain": "concurrent.fr", "count": 2}],
+                           "competitor_urls": {}, "cost_usd": 0.01,
+                           "engine": "perplexity", "engine_label": "Perplexity"},
+            "gemini": {"status": "ok", "queries_ok": 2, "total": 2,
+                       "cited_count": 0, "queries": queries_g,
+                       "competitors": [{"domain": "annuaire.fr", "count": 1}],
+                       "competitor_urls": {}, "cost_usd": 0.01,
+                       "engine": "gemini", "engine_label": "Gemini"},
+            "claude": {"status": "failed", "queries_ok": 0, "total": 2,
+                       "cited_count": 0, "queries": queries_c_fail,
+                       "competitors": [], "competitor_urls": {}, "cost_usd": 0.0,
+                       "engine": "claude", "engine_label": "Claude"},
+        },
+    }
+    a["engines"] = ["perplexity", "gemini", "claude"]
+    return a
+
+
+class TestRenderMultiEngines(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        rep = reports.create_report("https://plombier-example.fr", "fr",
+                                    sample_audit_multi())
+        cls.html = reports.render_html(reports.get_report(rep["token"]))
+        rep2 = reports.create_report("https://plumber-example.com", "en",
+                                     sample_audit_multi())
+        cls.html_en = reports.render_html(reports.get_report(rep2["token"]))
+
+    def test_matrix_fr(self):
+        self.assertIn("Visibilité par moteur d'IA", self.html)
+        self.assertIn("<th>Perplexity</th>", self.html)
+        self.assertIn("<th>Gemini</th>", self.html)
+        self.assertIn("<th>Claude</th>", self.html)
+        self.assertIn("mesures requête × moteur", self.html)
+
+    def test_gaps_fr(self):
+        self.assertIn("Écarts entre moteurs", self.html)
+        self.assertIn("cité par Perplexity mais pas par Gemini", self.html)
+
+    def test_per_engine_verbatims_fr(self):
+        self.assertIn("Ce que chaque IA répond vraiment (verbatims par moteur)", self.html)
+        self.assertIn("Perplexity — votre site cité dans 1 réponse(s) sur 2", self.html)
+        self.assertIn("Perplexity cite le site en premier.", self.html)
+        self.assertIn("Gemini privilégie les comparatifs.", self.html)
+
+    def test_unavailable_notice_fr(self):
+        # claude en panne + chatgpt sans clé -> les deux mentionnés
+        self.assertIn("indisponible(s) lors de", self.html)
+        self.assertIn("ChatGPT", self.html)
+        self.assertIn("Claude était indisponible lors de l'audit", self.html)
+
+    def test_multi_en(self):
+        self.assertIn("Visibility by AI engine", self.html_en)
+        self.assertIn("Differences between engines", self.html_en)
+        self.assertIn("cited by Perplexity but not by Gemini", self.html_en)
+        self.assertIn("verbatims by engine", self.html_en)
+        self.assertIn("query × engine measurements", self.html_en)
+
+    def test_legacy_single_engine_unchanged(self):
+        rep = reports.create_report("https://plombier-example.fr", "fr", sample_audit())
+        html = reports.render_html(reports.get_report(rep["token"]))
+        self.assertIn("Ce que l'IA répond vraiment (verbatims)", html)
+        self.assertNotIn("Visibilité par moteur d'IA", html)
+        self.assertIn("Détail des 15 requêtes testées", html)
+
+    def test_no_hole_multi_fr(self):
+        assert_no_hole(self, self.html, "rapport multi FR")
+
+    def test_no_hole_multi_en(self):
+        assert_no_hole(self, self.html_en, "rapport multi EN")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

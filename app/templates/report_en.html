@@ -100,9 +100,10 @@
       <strong>Overall AI visibility score</strong>
       <div class="score-sub">
         Technical audit: {{ score_technical }}/100
-        {% if score_citation is not none %} · Citations: {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} queries){% endif %}
+        {% if score_citation is not none %} · Citations: {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} {% if multi_engines %}query × engine measurements{% else %}queries{% endif %}){% endif %}
       </div>
       <div class="score-sub">Analyzed sector: "{{ keyword }}"</div>
+      {% if engine_cols %}<div class="score-sub">Audited engines: {{ engines_summary }}</div>{% endif %}
     </div>
   </div>
 
@@ -115,6 +116,11 @@
   {% if technical_error %}
   <p class="notice">⚠ The site could not be fully analyzed: {{ technical_error }}.
   The sections below are limited.</p>
+  {% endif %}
+
+  {% if engines_unavailable %}
+  <p class="notice">⚠ {{ engines_unavailable | join(", ") }}: engine(s) unavailable during the
+  audit — the results below are partial and cover the available engines.</p>
   {% endif %}
 
   {% if synthese %}
@@ -216,10 +222,64 @@
   {% endif %}
 
   {% if citations_status in ("ok", "partial") %}
+  {% if multi_engines %}
+  <h2>Visibility by AI engine</h2>
+  <p>We asked <strong>{{ n_queries }} buyer-intent questions</strong> to
+  <strong>{{ engine_cols | length }} AI engines</strong> ({{ engines_summary }}) —
+  {{ citations_total }} measurements in total. Your site is cited in
+  <strong>{{ cited_count }} measurement(s) out of {{ citations_total }}</strong>.</p>
+  {% if citations_status == "partial" %}
+  <p class="notice">⚠ Some queries failed (API limit or engine unavailable): partial results.</p>
+  {% endif %}
+  <table>
+    <tr><th>Tested query</th>{% for c in engine_cols %}<th>{{ c.label }}</th>{% endfor %}</tr>
+    {% for row in matrix %}
+    <tr>
+      <td>{{ row.query }}</td>
+      {% for c in engine_cols %}
+      <td>{% if row.by_engine[c.name] == "yes" %}<span class="cited-yes">✓ yes</span>{% elif row.by_engine[c.name] == "no" %}<span class="cited-no">✗ no</span>{% else %}<span class="cited-no">error</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Differences between engines</h2>
+  {% if gaps %}
+  <p>These queries show different visibility depending on the AI used — your customers
+  do not see the same answer depending on the platform they use:</p>
+  {% for g in gaps %}<p>• {{ g }}</p>{% endfor %}
+  {% else %}
+  <p>The engines agree: no citation gap between them on the tested queries.</p>
+  {% endif %}
+
+  <h2>What each AI actually answers (verbatims by engine)</h2>
+  <p>For each engine and each question, here is the AI's real answer (excerpt) and who
+  it cites — this is what your potential customers read today.</p>
+  {% for e in engines_data %}
+  <h3>{{ e.label }} — your site cited in {{ e.cited_count }} answer(s) out of {{ e.total }}</h3>
+  {% if e.status == "failed" %}
+  <p class="notice">⚠ {{ e.label }} was unavailable during the audit — its queries are not counted.</p>
+  {% else %}
+  {% for q in e.queries %}
+  <div class="verbatim">
+    <div class="q">{{ q.query }}</div>
+    {% if q.error %}
+    <p class="cited-no">Query failed — not counted.</p>
+    {% else %}
+    {% if q.verbatim %}<blockquote>"{{ q.verbatim }}"</blockquote>{% endif %}
+    <p>{% if q.cited %}<span class="cited-yes">✓ Your site is cited in this answer.</span>
+    {% else %}<span class="cited-no">✗ Your site is not cited.</span>{% endif %}
+    {% if q.citations %}<br>Cited instead of you: {{ q.citations | join(", ") }}{% endif %}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% endfor %}
+  {% else %}
   <h2>What the AI actually answers (verbatims)</h2>
-  <p>We asked Perplexity <strong>{{ citations_total }} buyer-intent questions</strong> in your
+  <p>We asked {{ engines_summary or "Perplexity" }} <strong>{{ citations_total }} buyer-intent questions</strong> in your
   sector: your site is cited in <strong>{{ cited_count }} answer(s) out of
-  {{ citations_total }}</strong>. For each question, here is Perplexity's real answer (excerpt)
+  {{ citations_total }}</strong>. For each question, here is {{ engines_summary or "Perplexity" }}'s real answer (excerpt)
   and who it cites — this is what your potential customers read today.</p>
   {% if citations_status == "partial" %}
   <p class="notice">⚠ Some queries failed (API limit): partial results.</p>
@@ -237,6 +297,7 @@
     {% endif %}
   </div>
   {% endfor %}
+  {% endif %}
   {% endif %}
 
   <h2>Detailed technical audit</h2>
@@ -261,6 +322,7 @@
   </div>
   {% endfor %}
 
+  {% if not multi_engines %}
   <h2>Detail of the {{ citations_total }} tested queries</h2>
   {% if citations_status in ("ok", "partial") %}
   <table>
@@ -273,8 +335,11 @@
     </tr>
     {% endfor %}
   </table>
+  {% endif %}
+  {% endif %}
+  {% if citations_status in ("ok", "partial") %}
   {% if competitors %}
-  <h3>Most cited competitors</h3>
+  <h2>Most cited competitors</h2>
   <table>
     <tr><th>Domain</th><th>Citation count</th></tr>
     {% for comp in competitors %}
@@ -298,7 +363,7 @@
 
   <h2>Methodology and limits</h2>
   <p>This audit combines: (1) a 100% automated technical analysis of your homepage and
-  robots.txt; (2) {{ citations_total or 15 }} real queries asked to Perplexity Sonar in your site's
+  robots.txt; (2) {{ n_queries or 15 }} real queries asked to {{ engines_summary or "Perplexity Sonar" }}{% if multi_engines %} ({{ citations_total }} query × engine measurements){% endif %} in your site's
   language, generated from your analyzed sector ("{{ keyword }}"); (3) an automated
   comparison with the competitor pages the AI cites. Citations in AI answers vary over
   time and across users: this report is a snapshot at generation date, not a guarantee

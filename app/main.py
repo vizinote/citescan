@@ -218,11 +218,14 @@ async def run_scan(domain: str, T: dict) -> dict:
 
 
 @app.get("/api/audit")
-async def paid_audit(url: str, lang: str = "en"):
-    """Paid audit pipeline (carte 3.3): technical + 15 Perplexity Sonar queries.
-    Degraded mode (technical only) when PERPLEXITY_API_KEY is unset — explicit, never silent."""
+async def paid_audit(url: str, lang: str = "en", engines: str = ""):
+    """Paid audit pipeline (carte 3.3 + multi-moteurs t_9864864c): technical +
+    15 requêtes buyer-intent par moteur. engines = CSV optionnel
+    (ex. "perplexity,gemini,chatgpt") ; défaut = tous les moteurs dont la clé
+    est présente. Mode dégradé explicite si aucun moteur disponible."""
     lang = lang if lang in ("fr", "en") else "en"
-    result = await run_paid_audit(url, lang=lang)
+    engines_sel = [e.strip() for e in engines.split(",") if e.strip()] or None
+    result = await run_paid_audit(url, lang=lang, engines_sel=engines_sel)
     return JSONResponse(result)
 
 
@@ -255,10 +258,13 @@ async def create_report(request: Request):
     lang = body.get("lang") if body.get("lang") in ("fr", "en") else "en"
     audit = body.get("audit")
     url = body.get("url", "")
+    engines_sel = body.get("engines")
+    if not isinstance(engines_sel, list) or not engines_sel:
+        engines_sel = None
     if not audit:
         if not url:
             return JSONResponse({"detail": "url or audit required"}, status_code=400)
-        audit = await run_paid_audit(url, lang=lang)
+        audit = await run_paid_audit(url, lang=lang, engines_sel=engines_sel)
     domain = audit.get("domain") or url
     rep = reports.create_report(domain, lang, audit)
     token = rep["token"]
@@ -320,7 +326,14 @@ async def _run_rescan(token: str):
     if not rescan:
         return
     try:
-        audit = await run_paid_audit(rescan["domain"], lang=rescan["lang"])
+        # Re-scan J+30 : mêmes moteurs que l'audit initial (t_9864864c) —
+        # relus depuis le rapport parent ; défaut = moteurs disponibles.
+        engines_sel = None
+        parent = reports.get_report(rescan["parent_token"])
+        if parent:
+            engines_sel = (parent["audit"].get("engines") or None)
+        audit = await run_paid_audit(rescan["domain"], lang=rescan["lang"],
+                                     engines_sel=engines_sel)
         rep = reports.create_report(rescan["domain"], rescan["lang"], audit,
                                     with_rescan=False)
         new_score = (audit.get("score") or {}).get("total")
@@ -358,6 +371,27 @@ async def rescan_page(token: str):
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/textes", StaticFiles(directory="textes"), name="textes")
+app.mount("/assets", StaticFiles(directory="assets"), name="assets")
+
+
+# Pages d'offre / légales (racine du repo). Le CTA de commande reste verrouillé
+# côté HTML tant que les Payment Links ne sont pas activés (verrou Franck n°3).
+_STATIC_PAGES = {
+    "/offre.html": "offre.html",
+    "/merci.html": "merci.html",
+    "/cgv.html": "cgv.html",
+    "/mentions-legales.html": "mentions-legales.html",
+    "/en/offer.html": "en/offer.html",
+    "/en/thanks.html": "en/thanks.html",
+    "/en/cgv.html": "en/cgv.html",
+    "/en/legal.html": "en/legal.html",
+}
+
+for _route, _file in _STATIC_PAGES.items():
+    async def _serve(_f=_file):
+        from fastapi.responses import FileResponse
+        return FileResponse(_f)
+    app.api_route(_route, methods=["GET", "HEAD"])(_serve)
 
 
 @app.api_route("/", methods=["GET", "HEAD"])

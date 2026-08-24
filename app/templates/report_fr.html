@@ -100,9 +100,10 @@
       <strong>Score global de visibilité IA</strong>
       <div class="score-sub">
         Audit technique : {{ score_technical }}/100
-        {% if score_citation is not none %} · Citations : {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} requêtes){% endif %}
+        {% if score_citation is not none %} · Citations : {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} {% if multi_engines %}mesures requête × moteur{% else %}requêtes{% endif %}){% endif %}
       </div>
       <div class="score-sub">Secteur analysé : « {{ keyword }} »</div>
+      {% if engine_cols %}<div class="score-sub">Moteurs audités : {{ engines_summary }}</div>{% endif %}
     </div>
   </div>
 
@@ -115,6 +116,11 @@
   {% if technical_error %}
   <p class="notice">⚠ Le site n'a pas pu être analysé complètement : {{ technical_error }}.
   Les sections ci-dessous sont limitées.</p>
+  {% endif %}
+
+  {% if engines_unavailable %}
+  <p class="notice">⚠ {{ engines_unavailable | join(", ") }} : moteur(s) indisponible(s) lors de
+  l'audit — les résultats ci-dessous sont partiels et couvrent les moteurs disponibles.</p>
   {% endif %}
 
   {% if synthese %}
@@ -216,10 +222,64 @@
   {% endif %}
 
   {% if citations_status in ("ok", "partial") %}
+  {% if multi_engines %}
+  <h2>Visibilité par moteur d'IA</h2>
+  <p>Nous avons posé <strong>{{ n_queries }} questions d'intention d'achat</strong> à
+  <strong>{{ engine_cols | length }} moteurs d'IA</strong> ({{ engines_summary }}) — soit
+  {{ citations_total }} mesures. Votre site est cité dans
+  <strong>{{ cited_count }} mesure(s) sur {{ citations_total }}</strong>.</p>
+  {% if citations_status == "partial" %}
+  <p class="notice">⚠ Certaines requêtes ont échoué (limite API ou moteur indisponible) : résultats partiels.</p>
+  {% endif %}
+  <table>
+    <tr><th>Requête testée</th>{% for c in engine_cols %}<th>{{ c.label }}</th>{% endfor %}</tr>
+    {% for row in matrix %}
+    <tr>
+      <td>{{ row.query }}</td>
+      {% for c in engine_cols %}
+      <td>{% if row.by_engine[c.name] == "yes" %}<span class="cited-yes">✓ oui</span>{% elif row.by_engine[c.name] == "no" %}<span class="cited-no">✗ non</span>{% else %}<span class="cited-no">erreur</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Écarts entre moteurs</h2>
+  {% if gaps %}
+  <p>Ces requêtes montrent une visibilité différente selon l'IA consultée — vos clients ne
+  voient pas la même réponse selon la plateforme qu'ils utilisent :</p>
+  {% for g in gaps %}<p>• {{ g }}</p>{% endfor %}
+  {% else %}
+  <p>Les moteurs s'accordent : aucun écart de citation entre eux sur les requêtes testées.</p>
+  {% endif %}
+
+  <h2>Ce que chaque IA répond vraiment (verbatims par moteur)</h2>
+  <p>Pour chaque moteur et chaque question, voici la réponse réelle de l'IA (extrait) et qui
+  elle cite — c'est ce que vos clients potentiels lisent aujourd'hui.</p>
+  {% for e in engines_data %}
+  <h3>{{ e.label }} — votre site cité dans {{ e.cited_count }} réponse(s) sur {{ e.total }}</h3>
+  {% if e.status == "failed" %}
+  <p class="notice">⚠ {{ e.label }} était indisponible lors de l'audit — ses requêtes ne sont pas comptabilisées.</p>
+  {% else %}
+  {% for q in e.queries %}
+  <div class="verbatim">
+    <div class="q">{{ q.query }}</div>
+    {% if q.error %}
+    <p class="cited-no">Requête en erreur — non comptabilisée.</p>
+    {% else %}
+    {% if q.verbatim %}<blockquote>« {{ q.verbatim }} »</blockquote>{% endif %}
+    <p>{% if q.cited %}<span class="cited-yes">✓ Votre site est cité dans cette réponse.</span>
+    {% else %}<span class="cited-no">✗ Votre site n'est pas cité.</span>{% endif %}
+    {% if q.citations %}<br>Cités à votre place : {{ q.citations | join(", ") }}{% endif %}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% endfor %}
+  {% else %}
   <h2>Ce que l'IA répond vraiment (verbatims)</h2>
-  <p>Nous avons posé <strong>{{ citations_total }} questions d'intention d'achat</strong> à Perplexity
+  <p>Nous avons posé <strong>{{ citations_total }} questions d'intention d'achat</strong> à {{ engines_summary or "Perplexity" }}
   dans votre secteur : votre site est cité dans <strong>{{ cited_count }} réponse(s) sur
-  {{ citations_total }}</strong>. Pour chaque question, voici la réponse réelle de Perplexity
+  {{ citations_total }}</strong>. Pour chaque question, voici la réponse réelle de {{ engines_summary or "Perplexity" }}
   (extrait) et qui elle cite — c'est ce que vos clients potentiels lisent aujourd'hui.</p>
   {% if citations_status == "partial" %}
   <p class="notice">⚠ Certaines requêtes ont échoué (limite API) : résultats partiels.</p>
@@ -237,6 +297,7 @@
     {% endif %}
   </div>
   {% endfor %}
+  {% endif %}
   {% endif %}
 
   <h2>Audit technique détaillé</h2>
@@ -261,6 +322,7 @@
   </div>
   {% endfor %}
 
+  {% if not multi_engines %}
   <h2>Détail des {{ citations_total }} requêtes testées</h2>
   {% if citations_status in ("ok", "partial") %}
   <table>
@@ -273,8 +335,11 @@
     </tr>
     {% endfor %}
   </table>
+  {% endif %}
+  {% endif %}
+  {% if citations_status in ("ok", "partial") %}
   {% if competitors %}
-  <h3>Concurrents les plus cités</h3>
+  <h2>Concurrents les plus cités</h2>
   <table>
     <tr><th>Domaine</th><th>Nombre de citations</th></tr>
     {% for comp in competitors %}
@@ -298,7 +363,7 @@
 
   <h2>Méthodologie et limites</h2>
   <p>Cet audit combine : (1) une analyse technique 100 % automatisée de votre page d'accueil et de
-  votre robots.txt ; (2) {{ citations_total or 15 }} requêtes réelles posées à Perplexity Sonar dans la langue
+  votre robots.txt ; (2) {{ n_queries or 15 }} requêtes réelles posées à {{ engines_summary or "Perplexity Sonar" }}{% if multi_engines %} (soit {{ citations_total }} mesures requête × moteur){% endif %} dans la langue
   de votre site, générées à partir de votre secteur analysé (« {{ keyword }} ») ; (3) une comparaison
   automatisée avec les pages concurrentes citées par l'IA. Les citations dans les réponses d'IA
   varient dans le temps et selon les utilisateurs : ce rapport est une photographie à la date

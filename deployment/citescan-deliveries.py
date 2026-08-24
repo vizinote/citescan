@@ -58,6 +58,17 @@ LOCAL_API = "http://127.0.0.1:8083"
 PRODUCT_KEY = "audit"
 PRODUCT_TITLE = "Audit CiteScan 29 €"
 
+# Paliers multi-moteurs (t_9864864c) — synchronisé avec app/engines.py :
+# 29 € = Perplexity + Gemini, +10 € par moteur additionnel (ChatGPT, Claude).
+TIER_ENGINES = {
+    29: ["perplexity", "gemini"],
+    39: ["perplexity", "gemini", "chatgpt"],
+    49: ["perplexity", "gemini", "chatgpt", "claude"],
+}
+# Un lien 39 € couvre "ChatGPT OU Claude" : le client choisit à la commande,
+# le bornage ci-dessous applique "base + au plus 1 extra".
+EXTRA_ENGINES = ("chatgpt", "claude")
+
 SENDER_NAME = "CiteScan"
 SENDER_EMAIL = "contact@brozapi.com"
 
@@ -85,16 +96,35 @@ def read_env(path):
 
 def load_payment_links():
     """Charge les payment links CiteScan (créés à l'activation, verrou Franck n°3).
-    Retourne {url_courte: (offre, intitulé)} — vide tant que non activé."""
+    Retourne {url_courte: (offre, intitulé, prix)} — vide tant que non activé.
+    Format : {"links": {"<url>": ["audit", "Audit CiteScan 29 €", 29]}} —
+    le 3e élément (palier EUR) est optionnel (None = lien historique)."""
     try:
         data = json.load(open(LINKS_JSON))
         links = {}
         for url, val in (data.get("links") or {}).items():
-            if isinstance(val, (list, tuple)) and len(val) == 2:
-                links[url] = (val[0], val[1])
+            if isinstance(val, (list, tuple)) and len(val) == 3:
+                links[url] = (val[0], val[1], val[2])
+            elif isinstance(val, (list, tuple)) and len(val) == 2:
+                links[url] = (val[0], val[1], None)
         return links
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def clamp_engines(requested, price):
+    """Borne les moteurs demandés au palier payé (anti-fraude : impossible
+    d'obtenir 4 moteurs en payant 29 € via un client_reference_id bricolé).
+    price None (lien historique) = base Perplexity + Gemini."""
+    base = ["perplexity", "gemini"]
+    req = [e for e in (requested or []) if e in EXTRA_ENGINES]
+    if price == 49:
+        extras = req[:2]
+    elif price == 39:
+        extras = req[:1]
+    else:
+        extras = []
+    return base + [e for e in EXTRA_ENGINES if e in extras]
 
 
 def stripe_get(path, key):
@@ -121,15 +151,20 @@ def local_api(method, path, body=None, timeout=120, token="", raw=False):
 
 
 def parse_client_reference(ref):
-    """client_reference_id = "<domaine>|<lang>" (lang optionnelle, défaut en)."""
+    """client_reference_id = "<domaine>|<lang>|<moteurs csv>" (lang et moteurs
+    optionnels ; défaut lang = déduit du TLD, défaut moteurs = base 29 €)."""
     if not ref:
-        return None, None
+        return None, None, []
     parts = ref.strip().split("|")
     domain = parts[0].strip() or None
     lang = parts[1].strip().lower() if len(parts) > 1 else ""
     if lang not in ("fr", "en"):
         lang = "fr" if (domain or "").endswith(".fr") else "en"
-    return domain, lang
+    engines = []
+    if len(parts) > 2:
+        engines = [e.strip().lower() for e in parts[2].split(",")
+                   if e.strip().lower() in ("perplexity", "gemini", "chatgpt", "claude")]
+    return domain, lang, engines
 
 
 def send_mail(env, to, subject, text_body, html_body=None, pdf=None,
@@ -411,13 +446,16 @@ def process_session(session, plink_map, payment_links, mail, tg, internal_token,
         record_delivery(sid, email or "-", "ignore", "ignore")
         log(f"IGNORE {sid}: pas un lien CiteScan (compte Stripe partagé)")
         return
-    offer, intitule = payment_links[url_short]
+    offer, intitule, price = payment_links[url_short]
     if not email:
         log(f"WARN: session {sid} payée sans email")
         return
 
-    # 1. Domaine + langue du parcours via client_reference_id ("<domaine>|<lang>").
-    domain, lang = parse_client_reference(session.get("client_reference_id"))
+    # 1. Domaine + langue + moteurs via client_reference_id
+    #    ("<domaine>|<lang>|<moteurs csv>") ; les moteurs sont bornés au
+    #    palier payé (anti-fraude, t_9864864c).
+    domain, lang, engines_req = parse_client_reference(session.get("client_reference_id"))
+    engines = clamp_engines(engines_req, price)
     if not domain:
         record_delivery(sid, email, offer, "no-ref")
         log(f"NO-REF {sid} {offer} {email}")
@@ -428,7 +466,7 @@ def process_session(session, plink_map, payment_links, mail, tg, internal_token,
     # 2. Lancer le pipeline d'audit payant + créer le rapport (page token + PDF).
     try:
         rep = local_api("POST", "/api/report",
-                        {"url": domain, "lang": lang},
+                        {"url": domain, "lang": lang, "engines": engines},
                         timeout=600, token=internal_token)
     except Exception as e:
         log(f"ERROR audit/report {sid} {domain}: {e}")
@@ -532,7 +570,7 @@ def main():
         if payment_links:
             plink_map[""] = next(iter(payment_links))
         else:
-            payment_links["fake://citescan-audit"] = (PRODUCT_KEY, PRODUCT_TITLE)
+            payment_links["fake://citescan-audit"] = (PRODUCT_KEY, PRODUCT_TITLE, 49)
             plink_map[""] = "fake://citescan-audit"
         process_session(fake, plink_map, payment_links, mail, tg, internal_token, dry_run)
         return

@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audit CiteScan complet — 29 € une fois</title>
-  <meta name="description" content="Audit CiteScan complet : plan d'action pour être cité par ChatGPT et Perplexity. 29 € une fois, livraison sous 24 h, garantie satisfait ou remboursé 7 jours.">
+  <title>Audit CiteScan multi-IA — dès 29 € une fois</title>
+  <meta name="description" content="Audit CiteScan multi-IA : plan d'action pour être cité par Perplexity, Gemini, ChatGPT et Claude. Dès 29 € une fois, livraison sous 24 h, garantie satisfait ou remboursé 7 jours.">
   <link rel="stylesheet" href="assets/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%236d28d9'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white'>“</text></svg>">
   <link rel="canonical" href="https://citescan.brozapi.com/offre.html">
   <link rel="alternate" hreflang="fr" href="https://citescan.brozapi.com/offre.html">
   <link rel="alternate" hreflang="en" href="https://citescan.brozapi.com/en/offer.html">
-  <meta property="og:title" content="Audit CiteScan complet — 29 €">
-  <meta property="og:description" content="Plan d'action pour être cité par ChatGPT et Perplexity. Livraison 24 h, garantie 7 jours.">
+  <meta property="og:title" content="Audit CiteScan multi-IA — dès 29 €">
+  <meta property="og:description" content="Plan d'action pour être cité par Perplexity, Gemini, ChatGPT et Claude. Livraison 24 h, garantie 7 jours.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://citescan.brozapi.com/offre.html">
 </head>
@@ -37,20 +37,42 @@
 
       <div class="hero">
         <span class="badge-garantie">Garantie 7 jours — satisfait ou remboursé</span>
-        <h1>Audit complet + plan d'action<br>pour être cité par ChatGPT et Perplexity</h1>
-        <p class="tagline">Rapport PDF 10-15 pages, livré sous 24 h. 15 requêtes réelles testées sur Perplexity. Plan d'action priorisé en français.</p>
+        <h1>Audit complet + plan d'action<br>pour être cité par les IA que vos clients utilisent</h1>
+        <p class="tagline">Rapport PDF 10-15 pages, livré sous 24 h. 15 requêtes réelles testées sur chaque moteur d'IA choisi : Perplexity, Gemini, ChatGPT, Claude. Plan d'action priorisé en français.</p>
       </div>
 
       <div class="offers">
         <div class="offer-card offer-card--featured">
-          <h2>Audit CiteScan</h2>
-          <div class="offer-price">29&nbsp;€</div>
+          <h2>Audit CiteScan multi-IA</h2>
+          <div class="offer-price" id="offer-price">29&nbsp;€</div>
           <div class="offer-price-sub">Une fois. Sans abonnement.</div>
+
+          <fieldset class="engine-select" id="engine-select">
+            <legend>IA auditées — votre choix fixe le prix</legend>
+            <label class="engine-select__row">
+              <input type="checkbox" checked disabled>
+              <span>Perplexity <em>— inclus</em></span>
+            </label>
+            <label class="engine-select__row">
+              <input type="checkbox" checked disabled>
+              <span>Gemini <em>— inclus</em></span>
+            </label>
+            <label class="engine-select__row">
+              <input type="checkbox" class="eng-extra" value="chatgpt" id="eng-chatgpt">
+              <span>ChatGPT <em>— +10&nbsp;€</em></span>
+            </label>
+            <label class="engine-select__row">
+              <input type="checkbox" class="eng-extra" value="claude" id="eng-claude">
+              <span>Claude <em>— +10&nbsp;€</em></span>
+            </label>
+          </fieldset>
+
           <ul>
             <li><strong>4 contrôles techniques</strong> approfondis (robots.txt bots IA, extractabilité, données structurées, E-E-A-T)</li>
-            <li><strong>15 requêtes buyer-intent</strong> testées sur Perplexity Sonar — votre site est-il cité&nbsp;? Quels concurrents le sont&nbsp;?</li>
+            <li><strong>15 requêtes buyer-intent</strong> testées sur chaque IA sélectionnée — votre site est-il cité&nbsp;? Quels concurrents le sont&nbsp;? Tableau comparatif par moteur.</li>
             <li><strong>Plan d'action priorisé</strong> : 5-10 actions classées impact/effort, en français</li>
             <li><strong>Rapport PDF</strong> 10-15 pages + page HTML privée partageable</li>
+            <li><strong>Re-scan gratuit à J+30</strong> (mêmes IA) pour mesurer vos progrès</li>
             <li><strong>Livraison sous 24&nbsp;h</strong> par email</li>
             <li><strong>Garantie 7 jours</strong> — remboursement intégral, sans justification</li>
           </ul>
@@ -62,37 +84,45 @@
           </div>
 
           <!-- ═══════════════════════════════════════════════════════
-               VERROU FRANCK (n°3) — Remplacer le bloc ci-dessous par le
-               Stripe Payment Link UNIQUEMENT après validation explicite.
-               Le lien doit être généré via stripe/create-payment-link.py.
+               VERROU FRANCK (n°3) — Remplacer le bloc ci-dessous par les
+               Stripe Payment Links UNIQUEMENT après validation explicite.
+               Les 3 liens (29/39/49 €) sont générés via
+               stripe/create-payment-link.py.
                ═══════════════════════════════════════════════════════ -->
-          <button class="btn btn--disabled btn--block" disabled aria-describedby="locked-cta">
+          <button class="btn btn--disabled btn--block" disabled aria-describedby="locked-cta" id="order-btn">
             Commander — 29&nbsp;€
           </button>
           <p id="locked-cta" style="font-size:.85rem; color:var(--citescan-muted); text-align:center; margin-top:.4rem;">
             Activation planifiée — verrou éditorial Brozapi.
           </p>
           <!--
-          À DÉCOMMENTER après validation Franck et création du Payment Link :
+          À DÉCOMMENTER après validation Franck et création des 3 Payment Links :
           formulaire domaine → Stripe. Le client_reference_id transporte
-          "<domaine>|fr" : c'est ce qui déclenche l'audit du bon site (carte 4).
+          "<domaine>|<langue>|<moteurs csv>" : c'est ce qui déclenche l'audit du
+          bon site avec les bonnes IA (le poller borne les moteurs au palier payé).
           <form id="order-form" onsubmit="return citescanCheckout(event, 'fr')">
             <label for="order-domain" style="display:block;margin-bottom:.4rem;font-weight:600;">
               Votre site à auditer
             </label>
             <input id="order-domain" type="text" required placeholder="https://votresite.fr"
                    style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:.8rem;">
-            <button type="submit" class="btn btn--primary btn--block">Commander — 29&nbsp;€</button>
+            <button type="submit" class="btn btn--primary btn--block" id="order-btn-live">Commander — 29&nbsp;€</button>
           </form>
           <script>
-          const STRIPE_PAYMENT_LINK = "REPLACE_WITH_STRIPE_PAYMENT_LINK";
+          // Un Payment Link par palier (créés via stripe/create-payment-link.py)
+          const STRIPE_PAYMENT_LINKS = {
+            29: "REPLACE_WITH_STRIPE_LINK_29",
+            39: "REPLACE_WITH_STRIPE_LINK_39",
+            49: "REPLACE_WITH_STRIPE_LINK_49",
+          };
           function citescanCheckout(e, lang) {
             e.preventDefault();
             const d = document.getElementById("order-domain").value.trim()
                       .replace(/^https?:\/\//, "").replace(/\/.*$/, "");
             if (!d || d.indexOf(".") < 0) { alert("Veuillez saisir un domaine valide."); return false; }
-            window.location.href = STRIPE_PAYMENT_LINK + "?client_reference_id=" +
-              encodeURIComponent(d + "|" + lang);
+            const price = currentPrice();
+            window.location.href = STRIPE_PAYMENT_LINKS[price] + "?client_reference_id=" +
+              encodeURIComponent(d + "|" + lang + "|" + currentEngines().join(","));
             return false;
           }
           </script>
@@ -100,12 +130,31 @@
         </div>
       </div>
 
+      <script>
+      // Grille tarifaire validée (2026-08-24) : 29 € = Perplexity + Gemini
+      // (inclus dans tous les paliers), +10 € par IA supplémentaire.
+      const PRICE_LADDER = {0: 29, 1: 39, 2: 49};
+      function selectedExtras() {
+        return Array.from(document.querySelectorAll(".eng-extra:checked")).map(c => c.value);
+      }
+      function currentPrice() { return PRICE_LADDER[selectedExtras().length]; }
+      function currentEngines() { return ["perplexity", "gemini"].concat(selectedExtras()); }
+      function updatePrice() {
+        const p = currentPrice();
+        document.getElementById("offer-price").textContent = p + " €";
+        const btn = document.getElementById("order-btn") || document.getElementById("order-btn-live");
+        if (btn) btn.textContent = "Commander — " + p + " €";
+      }
+      document.querySelectorAll(".eng-extra").forEach(c => c.addEventListener("change", updatePrice));
+      updatePrice();
+      </script>
+
       <section class="faq" aria-labelledby="faq-title">
         <h2 id="faq-title">Questions fréquentes</h2>
 
         <details>
           <summary>Que contient exactement l'audit payant&nbsp;?</summary>
-          <p>L'audit complet reprend les 4 contrôles gratuits (robots.txt, extractabilité, données structurées, E-E-A-T) en version détaillée avec extraits et corrections prêtes à copier, plus la détection réelle de citations sur 15 requêtes Perplexity, et un plan d'action priorisé de 5-10 actions.</p>
+          <p>L'audit complet reprend les 4 contrôles gratuits (robots.txt, extractabilité, données structurées, E-E-A-T) en version détaillée avec extraits et corrections prêtes à copier, plus la détection réelle de citations : 15 requêtes d'intention d'achat posées à chaque IA que vous avez choisie (Perplexity et Gemini inclus, ChatGPT et Claude en option), un tableau comparatif de visibilité par moteur, et un plan d'action priorisé de 5-10 actions.</p>
         </details>
 
         <details>
@@ -119,7 +168,12 @@
         </details>
 
         <details>
-          <summary>Pourquoi 29&nbsp;€ et pas un abonnement&nbsp;?</summary>
+          <summary>Pourquoi plusieurs IA, et comment le prix est-il calculé&nbsp;?</summary>
+          <p>Vos clients n'utilisent pas tous la même IA : ChatGPT domine très largement l'usage mondial, devant Gemini, Claude et Perplexity. L'audit de base (29&nbsp;€) couvre Perplexity et Gemini&nbsp;; chaque IA supplémentaire (ChatGPT et/ou Claude) ajoute 10&nbsp;€ — 49&nbsp;€ pour l'audit complet des 4 IA. Une IA indisponible pendant l'audit ne bloque jamais la livraison&nbsp;: le rapport indique clairement les résultats partiels.</p>
+        </details>
+
+        <details>
+          <summary>Pourquoi un paiement unique et pas un abonnement&nbsp;?</summary>
           <p>Parce que les outils existants (Profound, Otterly, Semrush) sont des abonnements coûteux visant les entreprises anglophones. CiteScan propose un audit ponctuel, actionnable, dans votre langue — sans engagement.</p>
         </details>
 

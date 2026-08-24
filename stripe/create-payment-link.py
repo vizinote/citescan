@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-CiteScan — Création du Stripe Payment Link (29 € one-shot).
+CiteScan — Création des 3 Stripe Payment Links multi-moteurs (29/39/49 €).
 
 ⚠ VERROU FRANCK (n°3) — À N'EXÉCUTER QU'APRÈS VALIDATION EXPLICITE DE FRANCK.
-Ce script crée un Payment Link LIVE qui peut encaisser de l'argent réel.
+Ce script crée des Payment Links LIVE qui peuvent encaisser de l'argent réel.
+
+Grille validée par Franck (2026-08-24, t_9864864c) :
+  - 29 € : Perplexity + Gemini
+  - 39 € : 29 € + ChatGPT OU Claude au choix (choix côté client)
+  - 49 € : les 4 IA (« audit complet »)
+Re-scan J+30 gratuit conservé sur tous les paliers (mêmes moteurs).
 
 Prérequis :
   - Clé Stripe LIVE dans /root/stripe.env (host-only, jamais dans le repo)
@@ -12,14 +18,17 @@ Prérequis :
 Usage :
   python3 create-payment-link.py
 
-Le script affiche le Payment Link URL à copier dans offre.html et en/offer.html
-(remplacer REPLACE_WITH_STRIPE_PAYMENT_LINK).
+Le script affiche les 3 URLs à :
+  1. copier dans offre.html et en/offer.html (STRIPE_PAYMENT_LINKS {29,39,49}
+     dans le formulaire commenté — VERROU : décommenter seulement après GO) ;
+  2. enregistrer dans /opt/data/citescan-links.json pour le poller de livraison
+     (le 3e élément = palier EUR, utilisé pour borner les moteurs audités).
 
 Après création :
-  1. Activer le webhook Stripe (carte 4 - pipeline d'audit)
-  2. Remplacer le bouton désactivé par <a href="<URL>"> dans les 2 pages offre
+  1. Écrire /opt/data/citescan-links.json (snippet affiché par le script)
+  2. Décommenter les formulaires de commande des 2 pages offre
   3. Push + deploy
-  4. Test bout-en-bout avec un achat réel remboursé (carte 5)
+  4. Test bout-en-bout avec un achat réel remboursé (verrou Franck)
 """
 
 import os
@@ -27,32 +36,71 @@ import sys
 from pathlib import Path
 
 STRIPE_ENV = Path("/root/stripe.env")
-PRODUCT_NAME = "CiteScan — Audit complet"
-PRODUCT_DESCRIPTION = (
-    "Audit complet CiteScan : 4 contrôles techniques approfondis, "
-    "détection de citations sur 15 requêtes Perplexity, plan d'action priorisé, "
-    "rapport PDF 10-15 pages + page HTML privée. Livraison sous 24 h. "
-    "Garantie satisfait ou remboursé 7 jours."
-)
-PRICE_EUR_CENTS = 2900  # 29,00 €
 CURRENCY = "eur"
 SUCCESS_URL_FR = "https://citescan.brozapi.com/merci.html"
-SUCCESS_URL_EN = "https://citescan.brozapi.com/en/thanks.html"
+
+TIERS = [
+    {
+        "price_cents": 2900,
+        "eur": 29,
+        "name": "CiteScan — Audit Perplexity + Gemini",
+        "description": (
+            "Audit CiteScan : 4 contrôles techniques approfondis, détection de "
+            "citations sur 15 requêtes buyer-intent testées sur Perplexity ET "
+            "Gemini, tableau comparatif par moteur, plan d'action priorisé, "
+            "rapport PDF 10-15 pages + page HTML privée, re-scan gratuit à "
+            "J+30. Livraison sous 24 h. Garantie satisfait ou remboursé 7 jours."
+        ),
+        "metadata": {"product": "citescan_audit", "version": "2",
+                     "tier": "29", "engines": "perplexity,gemini"},
+    },
+    {
+        "price_cents": 3900,
+        "eur": 39,
+        "name": "CiteScan — Audit Perplexity + Gemini + 1 IA au choix",
+        "description": (
+            "Audit CiteScan : tout le palier 29 € (Perplexity + Gemini) PLUS "
+            "une IA supplémentaire au choix (ChatGPT ou Claude) : 15 requêtes "
+            "buyer-intent par moteur, tableau comparatif, plan d'action "
+            "priorisé, rapport PDF + page HTML privée, re-scan gratuit à J+30. "
+            "Livraison sous 24 h. Garantie 7 jours."
+        ),
+        "metadata": {"product": "citescan_audit", "version": "2",
+                     "tier": "39", "engines": "perplexity,gemini,+1-au-choix"},
+    },
+    {
+        "price_cents": 4900,
+        "eur": 49,
+        "name": "CiteScan — Audit complet 4 IA",
+        "description": (
+            "Audit CiteScan complet : 15 requêtes buyer-intent testées sur les "
+            "4 IA (Perplexity, Gemini, ChatGPT, Claude), tableau comparatif de "
+            "visibilité par moteur, analyse des écarts entre IA, plan d'action "
+            "priorisé, rapport PDF 10-15 pages + page HTML privée, re-scan "
+            "gratuit à J+30. Livraison sous 24 h. Garantie 7 jours."
+        ),
+        "metadata": {"product": "citescan_audit", "version": "2",
+                     "tier": "49", "engines": "perplexity,gemini,chatgpt,claude"},
+    },
+]
 
 
 def load_stripe_key() -> str:
-    """Charge la clé Stripe depuis /root/stripe.env (jamais depuis le repo)."""
+    """Charge la clé Stripe depuis /root/stripe.env (jamais depuis le repo).
+    Accepte STRIPE_SECRET_KEY / STRIPE_LIVE_KEY (sk_live_) ou
+    STRIPE_RESTRICTED_KEY (rk_live_)."""
     if not STRIPE_ENV.exists():
         sys.exit(f"❌ Fichier {STRIPE_ENV} introuvable. Clé Stripe LIVE requise.")
     for line in STRIPE_ENV.read_text().splitlines():
         line = line.strip()
-        if line.startswith("STRIPE_SECRET_KEY=") or line.startswith("STRIPE_LIVE_KEY="):
-            key = line.split("=", 1)[1].strip().strip('"').strip("'")
-            if not key.startswith("sk_live_"):
-                sys.exit("❌ La clé trouvée n'est pas une clé LIVE (sk_live_...). "
-                         "Pas de clé test autorisée pour la prod.")
-            return key
-    sys.exit(f"❌ Aucune variable STRIPE_SECRET_KEY / STRIPE_LIVE_KEY dans {STRIPE_ENV}")
+        for var in ("STRIPE_SECRET_KEY", "STRIPE_LIVE_KEY", "STRIPE_RESTRICTED_KEY"):
+            if line.startswith(var + "="):
+                key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if not (key.startswith("sk_live_") or key.startswith("rk_live_")):
+                    sys.exit("❌ La clé trouvée n'est pas une clé LIVE "
+                             "(sk_live_/rk_live_). Pas de clé test autorisée.")
+                return key
+    sys.exit(f"❌ Aucune variable Stripe utilisable dans {STRIPE_ENV}")
 
 
 def main() -> None:
@@ -63,68 +111,53 @@ def main() -> None:
 
     stripe.api_key = load_stripe_key()
 
-    print("⚠  Création d'un Payment Link Stripe LIVE — CiteScan 29 €")
+    print("⚠  Création de 3 Payment Links Stripe LIVE — CiteScan 29/39/49 €")
     confirm = input("   Taper 'OUI-FRANCK-A-VALIDE' pour continuer : ").strip()
     if confirm != "OUI-FRANCK-A-VALIDE":
         sys.exit("❌ Annulé. Verrou Franck non levé.")
 
-    # 1. Produit
-    product = stripe.Product.create(
-        name=PRODUCT_NAME,
-        description=PRODUCT_DESCRIPTION,
-    )
-    print(f"✓ Produit créé : {product.id}")
-
-    # 2. Prix
-    price = stripe.Price.create(
-        product=product.id,
-        unit_amount=PRICE_EUR_CENTS,
-        currency=CURRENCY,
-    )
-    print(f"✓ Prix créé : {price.id} ({PRICE_EUR_CENTS/100:.2f} {CURRENCY.upper()})")
-
-    # 3. Payment Link (avec redirection vers /merci, la langue est gérée côté
-    # site : Stripe redirige vers /merci.html par défaut ; la page merci
-    # détecte la langue du navigateur et propose un lien vers /en/thanks.html)
-    link = stripe.PaymentLink.create(
-        line_items=[{"price": price.id, "quantity": 1}],
-        after_completion={
-            "type": "redirect",
-            "redirect": {"url": SUCCESS_URL_FR},
-        },
-        # Demande explicite du consentement rétractation numérique
-        consent_collection={
-            "terms_of_service": "required",
-        },
-        custom_text={
-            "terms_of_service_acceptance": {
-                "message": (
-                    "J'accepte les [CGV](https://citescan.brozapi.com/cgv.html) "
-                    "et je renonce expressément à mon droit de rétractation pour "
-                    "ce contenu numérique fourni immédiatement (art. L.221-28 13°). "
-                    "Garantie commerciale satisfait ou remboursé 7 jours."
-                ),
+    links_json_snippet = {}
+    for tier in TIERS:
+        product = stripe.Product.create(
+            name=tier["name"], description=tier["description"])
+        price = stripe.Price.create(
+            product=product.id, unit_amount=tier["price_cents"], currency=CURRENCY)
+        link = stripe.PaymentLink.create(
+            line_items=[{"price": price.id, "quantity": 1}],
+            after_completion={"type": "redirect",
+                              "redirect": {"url": SUCCESS_URL_FR}},
+            consent_collection={"terms_of_service": "required"},
+            custom_text={
+                "terms_of_service_acceptance": {
+                    "message": (
+                        "J'accepte les [CGV](https://citescan.brozapi.com/cgv.html) "
+                        "et je renonce expressément à mon droit de rétractation pour "
+                        "ce contenu numérique fourni immédiatement (art. L.221-28 13°). "
+                        "Garantie commerciale satisfait ou remboursé 7 jours."
+                    ),
+                },
             },
-        },
-        metadata={
-            "product": "citescan_audit",
-            "version": "1",
-        },
-    )
-    print(f"✓ Payment Link créé : {link.id}")
+            metadata=tier["metadata"],
+        )
+        print(f"✓ Palier {tier['eur']} € : {link.url}  ({link.id})")
+        links_json_snippet[link.url] = ["audit", f"Audit CiteScan {tier['eur']} €",
+                                        tier["eur"]]
+
     print()
     print("=" * 70)
-    print(f"  URL DU PAYMENT LINK : {link.url}")
-    print("=" * 70)
+    print("  1. /opt/data/citescan-links.json :")
     print()
-    print("Prochaines étapes :")
-    print("  1. Enregistrer le lien pour le poller de livraison (carte 4) :")
-    print("     /opt/data/citescan-links.json →")
-    print(f'     {{"links": {{"{link.url}": ["audit", "Audit CiteScan 29 €"]}}}}')
-    print("  2. Copier cette URL dans offre.html et en/offer.html")
-    print("     (décommenter le formulaire, constante STRIPE_PAYMENT_LINK)")
-    print("  3. Push + deploy")
-    print("  4. Carte 5 : test bout-en-bout avec achat réel remboursé (verrou Franck)")
+    import json
+    print(json.dumps({"links": links_json_snippet}, ensure_ascii=False, indent=2))
+    print()
+    print("  2. offre.html + en/offer.html : renseigner STRIPE_PAYMENT_LINKS")
+    for tier in TIERS:
+        for url in links_json_snippet:
+            if links_json_snippet[url][2] == tier["eur"]:
+                print(f"     {tier['eur']}: \"{url}\"")
+    print("     puis décommenter les formulaires (VERROU déjà levé à cette étape).")
+    print("  3. Push + deploy ; 4. Test achat réel remboursé (verrou Franck).")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

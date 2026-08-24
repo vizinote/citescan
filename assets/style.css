@@ -80,6 +80,17 @@ a:hover { text-decoration: underline; }
   border-radius: 8px; padding: .9rem 1rem; margin: 1.25rem 0; font-size: .9rem; }
 .cta-disabled-notice strong { color: #92400e; }
 
+/* Sélecteur d'IA multi-moteurs (t_9864864c) */
+.engine-select { border: 1px solid var(--citescan-border, #e2e8f0); border-radius: 8px;
+  padding: .9rem 1rem .7rem; margin: .25rem 0 1rem; }
+.engine-select legend { font-size: .85rem; font-weight: 600; color: var(--citescan-muted);
+  padding: 0 .4rem; }
+.engine-select__row { display: flex; align-items: center; gap: .6rem; padding: .3rem 0;
+  cursor: pointer; font-size: .95rem; }
+.engine-select__row input { width: 18px; height: 18px; accent-color: var(--citescan-primary); }
+.engine-select__row input:disabled { cursor: not-allowed; }
+.engine-select__row em { color: var(--citescan-muted); font-style: normal; font-size: .85rem; }
+
 .faq { margin: 2rem 0; }
 .faq details { background: #fff; border: 1px solid var(--citescan-border);
   border-radius: 8px; padding: .9rem 1.1rem; margin-bottom: .5rem; }

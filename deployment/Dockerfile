@@ -7,5 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ app/
 COPY textes/ textes/
 COPY static/ static/
+# Pages d'offre / légales + feuille de style (sélecteur multi-moteurs t_9864864c)
+COPY assets/ assets/
+COPY en/ en/
+COPY offre.html merci.html cgv.html mentions-legales.html ./
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
