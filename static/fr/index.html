@@ -32,32 +32,32 @@
     <line x1="29" y1="29" x2="41" y2="41" stroke="#6d28d9" stroke-width="3"/>
     <text x="13" y="24" font-size="13" font-weight="700" fill="#047857">"</text>
   </svg>
-  <h1 data-i18n="tagline"></h1>
-  <p class="subtitle" data-i18n="hero_subtitle"></p>
-  <p class="badge" data-i18n="hero_badge"></p>
+  <h1 data-i18n="tagline">Votre site est-il cité par ChatGPT et Perplexity ?</h1>
+  <p class="subtitle" data-i18n="hero_subtitle">Scan gratuit instantané. Audit complet + plan d'action en 24 h, 29 €, sans abonnement.</p>
+  <p class="badge" data-i18n="hero_badge">Scan gratuit — sans email</p>
   <form id="scan-form">
-    <input id="url-input" type="url" data-i18n-placeholder="scan_placeholder" placeholder="https://votresite.fr" required>
-    <button type="submit" data-i18n="scan_button"></button>
+    <input id="url-input" type="text" inputmode="url" autocomplete="url" spellcheck="false" data-i18n-placeholder="scan_placeholder" placeholder="https://votresite.fr" required>
+    <button type="submit" data-i18n="scan_button">Scanner mon site</button>
   </form>
   <div id="result" hidden>
     <div class="score-box">
-      <div class="score-num"><span id="score">—</span><span class="out-of" data-i18n="score_out_of"></span></div>
-      <h2 data-i18n="score_title"></h2>
+      <div class="score-num"><span id="score">—</span><span class="out-of" data-i18n="score_out_of">/100</span></div>
+      <h2 data-i18n="score_title">Score de visibilité IA</h2>
     </div>
-    <h3 data-i18n="examples_title"></h3>
+    <h3 data-i18n="examples_title">Ce que nous avons trouvé</h3>
     <ul id="findings"></ul>
     <div class="offer">
-      <h2 data-i18n="offer_title"></h2>
-      <p class="price" data-i18n="offer_price"></p>
-      <p class="sub" data-i18n="offer_sub"></p>
-      <a class="cta" href="#" data-i18n="offer_cta"></a>
+      <h2 data-i18n="offer_title">Recevoir l'audit complet + plan d'action</h2>
+      <p class="price" data-i18n="offer_price">29 €</p>
+      <p class="sub" data-i18n="offer_sub">paiement unique, livré en 24 h, garantie satisfait/remboursé 7 j</p>
+      <a class="cta" href="#" data-i18n="offer_cta">Acheter l'audit complet</a>
     </div>
   </div>
   <p id="error" hidden></p>
 </main>
 <footer>
   <span>CiteScan — Brozapi</span>
-  <a href="/static/mentions-legales.html" data-i18n="footer_legal"></a>
+  <a href="/static/mentions-legales.html" data-i18n="footer_legal">Mentions légales</a>
 </footer>
 <script src="/static/main.js" defer></script>
 </body>

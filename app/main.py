@@ -1,7 +1,9 @@
 """CiteScan API — free technical scan, score /100."""
 import os
+import re
 import sys
 import time
+import traceback
 
 import httpx
 from bs4 import BeautifulSoup
@@ -22,11 +24,62 @@ CACHE_TTL = 86400  # 24 h
 _cache: dict = {}
 RATE_LIMIT_SECONDS = 3600
 
+INTERNAL_TOKEN = os.environ.get("CITESCAN_INTERNAL_TOKEN", "").strip()
+
+# Free-scan finding texts, localized (journey language via ?lang=fr|en).
+SCAN_TEXTS = {
+    "fr": {
+        "robots_pass": "robots.txt autorise les bots IA",
+        "robots_fail": "robots.txt bloque : {bots}",
+        "robots_warn": "robots.txt introuvable",
+        "extract_pass": "contenu extractible sans JavaScript",
+        "extract_fail": "site inaccessible",
+        "jsonld_pass": "JSON-LD détecté : {types}",
+        "jsonld_warn": "aucune donnée structurée JSON-LD",
+        "eeat_about": "page à propos",
+        "eeat_dates": "dates de publication",
+        "eeat_https_only": "HTTPS uniquement",
+        "eeat_no_https": "pas de HTTPS",
+        "no_detail": "aucun détail",
+        "invalid_url": "URL invalide",
+        "unreachable": "site temporairement inaccessible",
+    },
+    "en": {
+        "robots_pass": "robots.txt allows AI bots",
+        "robots_fail": "robots.txt blocks: {bots}",
+        "robots_warn": "robots.txt not found",
+        "extract_pass": "content extractable without JS",
+        "extract_fail": "site unreachable",
+        "jsonld_pass": "JSON-LD found: {types}",
+        "jsonld_warn": "no JSON-LD structured data",
+        "eeat_about": "about page",
+        "eeat_dates": "publish dates",
+        "eeat_https_only": "HTTPS only",
+        "eeat_no_https": "no HTTPS",
+        "no_detail": "no detail",
+        "invalid_url": "invalid URL",
+        "unreachable": "site temporarily unreachable",
+    },
+}
+
 
 def normalize_domain(url: str) -> str:
-    parsed = httpx.URL(url)
-    scheme = parsed.scheme if parsed.scheme.startswith("http") else "https"
-    host = parsed.host.lower()
+    """Normalize user input to https://<host>. Accepts bare domains.
+    Raises ValueError on anything unusable — the endpoint turns it into a 400,
+    never a 500."""
+    url = (url or "").strip()
+    if not url or len(url) > 300:
+        raise ValueError("empty or too long")
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        url = "https://" + url
+    try:
+        parsed = httpx.URL(url)
+    except Exception as e:
+        raise ValueError(f"unparseable: {e}") from e
+    host = (parsed.host or "").lower()
+    if not host or "." not in host or any(c in host for c in " /?#@"):
+        raise ValueError("invalid host")
+    scheme = parsed.scheme if parsed.scheme in ("http", "https") else "https"
     return f"{scheme}://{host}"
 
 
@@ -37,30 +90,56 @@ def extract_text(html: str) -> str:
     return soup.get_text(strip=True)
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, exc: Exception):
+    """Franck must never see a bare 'Internal Server Error'."""
+    traceback.print_exc()
+    return JSONResponse({"detail": "temporary server error"}, status_code=502)
+
+
 @app.get("/health")
 def health():
     return JSONResponse({"ok": True, "service": "citescan-api"})
 
 
 @app.get("/api/scan")
-async def scan(url: str, request: Request):
+async def scan(url: str, request: Request, lang: str = "en"):
+    lang = lang if lang in SCAN_TEXTS else "en"
+    T = SCAN_TEXTS[lang]
+
+    try:
+        domain = normalize_domain(url)
+    except ValueError:
+        return JSONResponse({"detail": T["invalid_url"]}, status_code=400)
+
+    # Internal token (poller, test script) bypasses the public rate limit.
+    internal = bool(INTERNAL_TOKEN) and \
+        request.headers.get("X-Internal-Token", "") == INTERNAL_TOKEN
     ip = request.client.host if request.client else "anon"
     now = time.time()
-    last = _ip_last_scan.get(ip, 0)
-    if now - last < RATE_LIMIT_SECONDS:
-        return JSONResponse({"detail": "Rate limit: 1 scan/IP/hour"}, status_code=429)
+    if not internal:
+        last = _ip_last_scan.get(ip, 0)
+        if now - last < RATE_LIMIT_SECONDS:
+            return JSONResponse({"detail": "Rate limit: 1 scan/IP/hour"}, status_code=429)
 
-    domain = normalize_domain(url)
     if domain in _cache and now - _cache[domain]["t"] < CACHE_TTL:
-        return _cache[domain]["res"]
+        res = _cache[domain]["res"]
+        if res.get("lang") == lang:
+            return res
 
-    _ip_last_scan[ip] = now
-    result = await run_scan(domain)
+    if not internal:
+        _ip_last_scan[ip] = now
+    try:
+        result = await run_scan(domain, T)
+    except Exception:
+        traceback.print_exc()
+        return JSONResponse({"detail": T["unreachable"]}, status_code=502)
+    result["lang"] = lang
     _cache[domain] = {"t": now, "res": result}
     return result
 
 
-async def run_scan(domain: str) -> dict:
+async def run_scan(domain: str, T: dict) -> dict:
     checks = {
         "robots": {"status": "fail", "text": [], "points": 0},
         "extract": {"status": "fail", "text": [], "points": 0},
@@ -74,22 +153,21 @@ async def run_scan(domain: str) -> dict:
         try:
             r = await client.get(f"{domain}/robots.txt")
             r_text = r.text.lower()
-            banned = [b.lower() for b in AI_BOTS]
             blocked = [b for b in AI_BOTS if b.lower() in r_text and "disallow: /" in r_text]
-            robots_ok = f"AI bots: {'blocked' if blocked else 'allowed'}"
             if blocked:
-                checks["robots"] = {"status": "fail", "text": [f"robots.txt blocks {', '.join(blocked)}"], "points": 0}
+                checks["robots"] = {"status": "fail",
+                                    "text": [T["robots_fail"].format(bots=", ".join(blocked))],
+                                    "points": 0}
             else:
-                checks["robots"] = {"status": "pass", "text": ["robots.txt allows AI bots"], "points": 30}
+                checks["robots"] = {"status": "pass", "text": [T["robots_pass"]], "points": 30}
         except Exception:
-            checks["robots"] = {"status": "warn", "text": ["robots.txt not found"], "points": 10}
+            checks["robots"] = {"status": "warn", "text": [T["robots_warn"]], "points": 10}
 
         # page fetch
         try:
             r = await client.get(domain)
-            text = extract_text(r.text)
             soup = BeautifulSoup(r.text, "html.parser")
-            checks["extract"] = {"status": "pass", "text": ["content extractable without JS"], "points": 30}
+            checks["extract"] = {"status": "pass", "text": [T["extract_pass"]], "points": 30}
 
             # JSON-LD
             if soup.find("script", type="application/ld+json"):
@@ -102,29 +180,38 @@ async def run_scan(domain: str) -> dict:
                             frag = frag.strip('"{}:.,')
                             if frag:
                                 types.append(frag)
-                checks["jsonld"] = {"status": "pass", "text": [f"JSON-LD found: {', '.join(set(types)) if types else 'yes'}"], "points": 20}
+                checks["jsonld"] = {"status": "pass",
+                                    "text": [T["jsonld_pass"].format(
+                                        types=", ".join(sorted(set(types))) if types else "yes")],
+                                    "points": 20}
             else:
-                checks["jsonld"] = {"status": "warn", "text": ["no JSON-LD structured data"], "points": 5}
+                checks["jsonld"] = {"status": "warn", "text": [T["jsonld_warn"]], "points": 5}
 
             # E-E-A-T
             signals = []
             if soup.find("a", href=lambda h: h and ("about" in h.lower() or "mentions" in h.lower() or "legal" in h.lower())):
-                signals.append("about page")
+                signals.append(T["eeat_about"])
             if r.text.lower().count("publish") or soup.find("time"):
-                signals.append("publish dates")
+                signals.append(T["eeat_dates"])
             if not domain.startswith("https"):
-                checks["eeat"] = {"status": "fail", "text": ["no HTTPS"], "points": 0}
+                checks["eeat"] = {"status": "fail", "text": [T["eeat_no_https"]], "points": 0}
             else:
-                checks["eeat"] = {"status": "pass" if signals else "warn", "text": [", ".join(signals) or "HTTPS only"], "points": 20 if signals else 5}
+                checks["eeat"] = {"status": "pass" if signals else "warn",
+                                  "text": [", ".join(signals) or T["eeat_https_only"]],
+                                  "points": 20 if signals else 5}
         except httpx.RequestError:
-            checks["extract"] = {"status": "fail", "text": ["site unreachable"], "points": 0}
+            checks["extract"] = {"status": "fail", "text": [T["extract_fail"]], "points": 0}
 
     score = sum(c["points"] for c in checks.values())
+    # Never index an empty text list — fall back to an explicit placeholder.
+    def _first(key: str) -> str:
+        return checks[key]["text"][0] if checks[key]["text"] else T["no_detail"]
+
     findings = [
-        {"status": checks["robots"]["status"], "text": checks["robots"]["text"][0]},
-        {"status": checks["extract"]["status"], "text": checks["extract"]["text"][0]},
-        {"status": checks["jsonld"]["status"], "text": checks["jsonld"]["text"][0]},
-        {"status": checks["eeat"]["status"], "text": checks["eeat"]["text"][0]},
+        {"status": checks["robots"]["status"], "text": _first("robots")},
+        {"status": checks["extract"]["status"], "text": _first("extract")},
+        {"status": checks["jsonld"]["status"], "text": _first("jsonld")},
+        {"status": checks["eeat"]["status"], "text": _first("eeat")},
     ]
     return {"score": min(score, 100), "findings": findings[:3]}
 
@@ -140,7 +227,6 @@ async def paid_audit(url: str, lang: str = "en"):
 
 # ---------------------------------------------------------------- paid reports (carte 3.4)
 
-INTERNAL_TOKEN = os.environ.get("CITESCAN_INTERNAL_TOKEN", "").strip()
 PUBLIC_BASE = "https://citescan.brozapi.com"
 
 

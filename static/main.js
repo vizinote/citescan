@@ -1,10 +1,12 @@
 const Lang = (() => {
+  // The URL path decides: /fr/ = French, everything else = English (hreflang
+  // semantics). Only an explicit ?lang=fr|en overrides. localStorage is NOT
+  // consulted: it used to win over the path, so clicking "Français"/"English"
+  // after a visit in the other language kept the page in the wrong language
+  // (bug recette 2026-08-24).
   const params = new URLSearchParams(location.search);
   let lang = params.get('lang');
-  if (!lang) {
-    lang = localStorage.getItem('lang');
-  }
-  if (!lang) {
+  if (lang !== 'fr' && lang !== 'en') {
     lang = location.pathname.startsWith('/fr') ? 'fr' : 'en';
   }
   localStorage.setItem('lang', lang);
@@ -41,20 +43,23 @@ async function loadTexts() {
 // Scan logic
 document.getElementById('scan-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const url = document.getElementById('url-input').value.trim();
+  const rawUrl = document.getElementById('url-input').value.trim();
   const btn = e.target.querySelector('button');
   const err = document.getElementById('error');
   const res = document.getElementById('result');
   err.hidden = true; res.hidden = true;
 
   const t = await loadTexts() || {};
+  // Normalize: accept bare domains ("example.com" -> "https://example.com")
+  let url = rawUrl;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   let parsed;
   try { parsed = new URL(url); } catch {
     err.textContent = t.form_error_invalid || 'Invalid URL';
     err.hidden = false;
     return;
   }
-  if (!/^https?:/.test(parsed.protocol)) {
+  if (!parsed.hostname || !parsed.hostname.includes('.')) {
     err.textContent = t.form_error_invalid || 'Invalid URL';
     err.hidden = false;
     return;
@@ -63,7 +68,7 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.textContent = t.scan_analyzing || '…';
   try {
-    const resp = await fetch(`/api/scan?url=${encodeURIComponent(url)}`);
+    const resp = await fetch(`/api/scan?url=${encodeURIComponent(url)}&lang=${Lang}`);
     const data = await resp.json();
     if (!resp.ok) {
       err.textContent = resp.status === 429

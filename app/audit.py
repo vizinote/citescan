@@ -67,6 +67,54 @@ QUERY_TEMPLATES = {
 
 # ---------------------------------------------------------------- technical audit
 
+# Localized human-readable strings for the paid report (carte recette 2026-08-24:
+# details used to be English-only, so FR reports came out FR/EN mixed).
+_TXT = {
+    "fr": {
+        "robots_missing": "robots.txt introuvable — les bots IA sont autorisés par défaut",
+        "robots_blocked": "robots.txt bloque : {bots}",
+        "robots_ok": "tous les principaux bots IA sont autorisés",
+        "extract_pass": "{words} mots extractibles sans JavaScript, {headings} titres",
+        "extract_warn": "seulement {words} mots extractibles sans JavaScript",
+        "extract_fail": "contenu trop mince ({words} mots) — nécessite probablement un rendu JavaScript",
+        "jsonld_pass": "JSON-LD valide : {types}",
+        "jsonld_untyped": "sans type",
+        "jsonld_invalid": "JSON-LD présent mais invalide (erreur d'analyse)",
+        "jsonld_missing": "aucune donnée structurée JSON-LD",
+        "sig_about": "page à propos / mentions légales",
+        "sig_dates": "dates de publication présentes",
+        "sig_author": "auteur identifié",
+        "miss_about": "pas de page à propos / mentions légales",
+        "miss_dates": "pas de dates de publication",
+        "miss_author": "pas d'auteur identifié",
+        "miss_https": "pas de HTTPS",
+        "eeat_https_only": "HTTPS uniquement",
+        "site_unreachable": "site inaccessible : {err}",
+    },
+    "en": {
+        "robots_missing": "robots.txt not found — AI bots default to allowed",
+        "robots_blocked": "robots.txt blocks: {bots}",
+        "robots_ok": "all major AI bots allowed",
+        "extract_pass": "{words} words extractable without JS, {headings} headings",
+        "extract_warn": "only {words} words extractable without JS",
+        "extract_fail": "thin content ({words} words) — likely requires JS rendering",
+        "jsonld_pass": "valid JSON-LD: {types}",
+        "jsonld_untyped": "untyped",
+        "jsonld_invalid": "JSON-LD present but invalid (parse error)",
+        "jsonld_missing": "no JSON-LD structured data",
+        "sig_about": "about/legal page",
+        "sig_dates": "dates present",
+        "sig_author": "identified author",
+        "miss_about": "no about/legal page",
+        "miss_dates": "no publication dates",
+        "miss_author": "no identified author",
+        "miss_https": "no HTTPS",
+        "eeat_https_only": "HTTPS only",
+        "site_unreachable": "site unreachable: {err}",
+    },
+}
+
+
 def _robot_bot_status(robots_text: str, bot: str) -> str:
     """Return 'blocked' / 'allowed' / 'absent' for a bot in robots.txt."""
     lines = [l.strip() for l in robots_text.splitlines()]
@@ -100,8 +148,12 @@ def _robot_bot_status(robots_text: str, bot: str) -> str:
     return "allowed" if bot_seen else "absent"
 
 
-def technical_audit(html: str, robots_text: "str | None", final_url: str) -> dict:
-    """Deep technical audit. Returns checks with points (total 100) + details."""
+def technical_audit(html: str, robots_text: "str | None", final_url: str,
+                    lang: str = "en") -> dict:
+    """Deep technical audit. Returns checks with points (total 100) + details
+    in the journey language. Machine codes (signal_codes/missing_codes) are
+    kept alongside so scoring logic never depends on wording."""
+    T = _TXT[lang if lang in _TXT else "en"]
     soup = BeautifulSoup(html, "html.parser")
     checks = {}
 
@@ -109,7 +161,7 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str) -> dic
     if robots_text is None:
         checks["robots"] = {
             "status": "warn", "points": 15,
-            "detail": "robots.txt not found — AI bots default to allowed",
+            "detail": T["robots_missing"],
             "bots": {},
         }
     else:
@@ -118,9 +170,9 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str) -> dic
         if blocked:
             pts = 0 if len(blocked) >= 3 else 10
             status = "fail" if len(blocked) >= 3 else "warn"
-            detail = f"robots.txt blocks: {', '.join(blocked)}"
+            detail = T["robots_blocked"].format(bots=", ".join(blocked))
         else:
-            pts, status, detail = 30, "pass", "all major AI bots allowed"
+            pts, status, detail = 30, "pass", T["robots_ok"]
         checks["robots"] = {"status": status, "points": pts, "detail": detail, "bots": bots}
 
     # 2. Extractability (30 pts)
@@ -131,13 +183,13 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str) -> dic
     headings = len(soup.find_all(["h1", "h2", "h3"]))
     if words >= 300 and headings >= 1:
         checks["extract"] = {"status": "pass", "points": 30,
-                             "detail": f"{words} words extractable without JS, {headings} headings"}
+                             "detail": T["extract_pass"].format(words=words, headings=headings)}
     elif words >= 100:
         checks["extract"] = {"status": "warn", "points": 20,
-                             "detail": f"only {words} words extractable without JS"}
+                             "detail": T["extract_warn"].format(words=words)}
     else:
         checks["extract"] = {"status": "fail", "points": 5,
-                             "detail": f"thin content ({words} words) — likely requires JS rendering"}
+                             "detail": T["extract_fail"].format(words=words)}
 
     # 3. JSON-LD (20 pts) — parsed BEFORE script decompose below
     soup_raw = BeautifulSoup(html, "html.parser")
@@ -158,35 +210,36 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str) -> dic
         except json.JSONDecodeError:
             jsonld_invalid += 1
     if jsonld_valid:
-        types_str = ", ".join(sorted(set(jsonld_types))) or "untyped"
+        types_str = ", ".join(sorted(set(jsonld_types))) or T["jsonld_untyped"]
         checks["jsonld"] = {"status": "pass", "points": 20,
-                            "detail": f"valid JSON-LD: {types_str}",
+                            "detail": T["jsonld_pass"].format(types=types_str),
                             "types": sorted(set(jsonld_types))}
     elif jsonld_invalid:
         checks["jsonld"] = {"status": "fail", "points": 5,
-                            "detail": "JSON-LD present but invalid (parse error)"}
+                            "detail": T["jsonld_invalid"]}
     else:
-        checks["jsonld"] = {"status": "warn", "points": 5, "detail": "no JSON-LD structured data"}
+        checks["jsonld"] = {"status": "warn", "points": 5, "detail": T["jsonld_missing"]}
 
     # 4. E-E-A-T (20 pts)
     signals, missing = [], []
+    signal_codes, missing_codes = [], []
     soup2 = BeautifulSoup(html, "html.parser")
     if soup2.find("a", href=lambda h: h and any(k in h.lower() for k in
                   ("about", "apropos", "a-propos", "mentions", "legal", "qui-sommes"))):
-        signals.append("about/legal page")
+        signals.append(T["sig_about"]); signal_codes.append("about")
     else:
-        missing.append("no about/legal page")
+        missing.append(T["miss_about"]); missing_codes.append("about")
     if soup2.find("time") or re.search(r"\b(20[12]\d)[/-]", html):
-        signals.append("dates present")
+        signals.append(T["sig_dates"]); signal_codes.append("dates")
     else:
-        missing.append("no publication dates")
+        missing.append(T["miss_dates"]); missing_codes.append("dates")
     if soup2.find("meta", attrs={"name": "author"}) or re.search(r'"author"', html):
-        signals.append("identified author")
+        signals.append(T["sig_author"]); signal_codes.append("author")
     else:
-        missing.append("no identified author")
+        missing.append(T["miss_author"]); missing_codes.append("author")
     https_ok = final_url.startswith("https")
     if not https_ok:
-        missing.append("no HTTPS")
+        missing.append(T["miss_https"]); missing_codes.append("https")
     if signals and https_ok:
         pts, status = 20, "pass"
     elif https_ok:
@@ -194,8 +247,9 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str) -> dic
     else:
         pts, status = 0, "fail"
     checks["eeat"] = {"status": status, "points": pts,
-                      "detail": "; ".join(signals + missing) or "HTTPS only",
-                      "signals": signals, "missing": missing}
+                      "detail": "; ".join(signals + missing) or T["eeat_https_only"],
+                      "signals": signals, "missing": missing,
+                      "signal_codes": signal_codes, "missing_codes": missing_codes}
 
     total = sum(c["points"] for c in checks.values())
     return {"score": min(total, 100), "checks": checks, "word_count": words}
@@ -248,14 +302,29 @@ def build_queries(keyword: str, lang: str) -> list:
 
 # ---------------------------------------------------------------- perplexity
 
-async def _sonar_query(client: httpx.AsyncClient, query: str, retries: int = 3) -> dict:
+# Force the answer language (carte recette 2026-08-24: Sonar answered in
+# English whatever the journey language, polluting FR reports/citations).
+_SONAR_SYSTEM = {
+    "fr": "Tu es un assistant de recherche francophone. Réponds exclusivement en "
+          "français, de façon factuelle et concise, et privilégie les sources "
+          "francophones pertinentes.",
+    "en": "You are an English-speaking research assistant. Answer exclusively in "
+          "English, factually and concisely, and prefer relevant English-language "
+          "sources.",
+}
+
+
+async def _sonar_query(client: httpx.AsyncClient, query: str, retries: int = 3,
+                       lang: str = "en") -> dict:
     """One Perplexity Sonar call with 429 retry/backoff."""
+    system = _SONAR_SYSTEM.get(lang, _SONAR_SYSTEM["en"])
     delay = 8.0
     for attempt in range(retries + 1):
         try:
             r = await client.post(PERPLEXITY_URL, json={
                 "model": PERPLEXITY_MODEL,
-                "messages": [{"role": "user", "content": query}],
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": query}],
                 "search_context_size": "low",
                 "return_citations": True,
             }, headers={"Authorization": f"Bearer {PERPLEXITY_API_KEY}",
@@ -289,8 +358,10 @@ def _host_of(url: str) -> str:
 async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     """15 Sonar queries; per query: client cited? competitors cited?"""
     if not PERPLEXITY_API_KEY:
-        return {"status": "unavailable",
-                "reason": "PERPLEXITY_API_KEY not set — degraded mode (technical audit only)",
+        reason = ("PERPLEXITY_API_KEY non définie — mode dégradé (audit technique seul)"
+                  if lang == "fr" else
+                  "PERPLEXITY_API_KEY not set — degraded mode (technical audit only)")
+        return {"status": "unavailable", "reason": reason,
                 "queries": [], "cited_count": 0, "total": 0, "competitors": []}
 
     queries = build_queries(keyword, lang)
@@ -301,7 +372,7 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     results = []
     async with httpx.AsyncClient(timeout=timeout) as client:
         for q in queries:
-            results.append(await _sonar_query(client, q))
+            results.append(await _sonar_query(client, q, lang=lang))
             await asyncio.sleep(1.5)
 
     per_query = []
@@ -349,43 +420,43 @@ def compute_score(technical: dict, citations: dict) -> dict:
 ACTION_LIBRARY = {
     "robots_blocked": {
         "impact": 10, "effort": 1,
-        "fr": "Débloquer les bots IA dans robots.txt (GPTBot, ClaudeBot, PerplexityBot) : retirer les règles 'Disallow: /' qui les ciblent.",
-        "en": "Unblock AI bots in robots.txt (GPTBot, ClaudeBot, PerplexityBot): remove the 'Disallow: /' rules targeting them.",
+        "fr": "Débloquer les bots IA dans robots.txt (GPTBot, ClaudeBot, PerplexityBot) : retirer les règles « Disallow: / » qui les ciblent, puis vérifier avec un fetch de test. Action de 10 minutes, effet immédiat sur la lisibilité par les IA.",
+        "en": "Unblock AI bots in robots.txt (GPTBot, ClaudeBot, PerplexityBot): remove the 'Disallow: /' rules targeting them, then verify with a test fetch. A 10-minute fix with immediate effect on AI readability.",
     },
     "no_jsonld": {
         "impact": 8, "effort": 3,
-        "fr": "Ajouter des données structurées JSON-LD (Organization + FAQ + Product/Service) sur les pages clés.",
-        "en": "Add JSON-LD structured data (Organization + FAQ + Product/Service) on key pages.",
+        "fr": "Ajouter des données structurées JSON-LD sur la page d'accueil et les pages clés : types Organization (nom, logo, contact), FAQPage si vous avez une FAQ, Product/Service avec prix. Valider ensuite avec l'outil « Test des résultats enrichis » de Google.",
+        "en": "Add JSON-LD structured data on the homepage and key pages: Organization (name, logo, contact), FAQPage if you have a FAQ, Product/Service with pricing. Then validate with Google's Rich Results Test.",
     },
     "thin_content": {
         "impact": 8, "effort": 6,
-        "fr": "Épaissir le contenu textuel accessible sans JavaScript : les IA citent les pages riches en texte extractible.",
-        "en": "Thicken text content accessible without JavaScript: AIs cite pages rich in extractable text.",
+        "fr": "Épaissir le contenu textuel lisible sans JavaScript (viser 300+ mots par page clé) : les IA citent les pages dont le texte est extractible directement. Déplacer les contenus essentiels hors des composants rendus côté client.",
+        "en": "Thicken text content readable without JavaScript (target 300+ words per key page): AIs cite pages whose text is directly extractable. Move essential content out of client-rendered components.",
     },
     "no_about": {
         "impact": 6, "effort": 2,
-        "fr": "Créer/renforcer une page À propos avec auteur identifié et mentions légales (signaux E-E-A-T).",
-        "en": "Create/strengthen an About page with an identified author and legal notices (E-E-A-T signals).",
+        "fr": "Créer ou renforcer une page « À propos » avec un auteur identifié (nom, rôle, photo) et des mentions légales accessibles : ces signaux E-E-A-T aident les IA à juger le site fiable et citable.",
+        "en": "Create or strengthen an About page with an identified author (name, role, photo) and accessible legal notices: these E-E-A-T signals help AIs judge the site as trustworthy and citable.",
     },
     "no_dates": {
         "impact": 5, "effort": 2,
-        "fr": "Afficher des dates de publication/mise à jour visibles (balises <time> ou JSON-LD datePublished).",
-        "en": "Show visible publication/update dates (<time> tags or JSON-LD datePublished).",
+        "fr": "Afficher des dates de publication et de mise à jour visibles (balises <time> ou datePublished/dateModified en JSON-LD) : les IA privilégient les contenus datés et frais.",
+        "en": "Show visible publication and update dates (<time> tags or datePublished/dateModified in JSON-LD): AIs favor dated, fresh content.",
     },
     "not_cited": {
         "impact": 10, "effort": 7,
-        "fr": "Le site n'est cité sur aucune requête : créer du contenu de référence (guides, comparatifs, FAQ) qui cite des sources reconnues, puis le faire référencer par des sites déjà cités par les IA.",
-        "en": "Site cited on no query: create reference content (guides, comparisons, FAQ) citing recognized sources, then get referenced by sites already cited by AIs.",
+        "fr": "Le site n'est cité sur aucune requête testée : publier du contenu de référence (guides pratiques, comparatifs chiffrés, FAQ) qui cite des sources reconnues, puis obtenir des liens depuis des sites déjà cités par les IA (annuaires de qualité, articles invités, partenaires).",
+        "en": "The site is cited on none of the tested queries: publish reference content (practical guides, data-backed comparisons, FAQ) citing recognized sources, then earn links from sites already cited by AIs (quality directories, guest articles, partners).",
     },
     "competitors_cited": {
         "impact": 9, "effort": 5,
-        "fr": "Des concurrents sont cités à votre place : analyser leurs pages citées et produire un contenu plus complet et plus factuel sur les mêmes sujets.",
-        "en": "Competitors are cited instead of you: analyze their cited pages and produce more comprehensive, factual content on the same topics.",
+        "fr": "Des concurrents sont cités à votre place : analyser leurs pages citées (structure, profondeur, sources) et produire un contenu plus complet et plus factuel sur les mêmes sujets, avec des chiffres et des réponses directes aux questions des acheteurs.",
+        "en": "Competitors are cited instead of you: analyze their cited pages (structure, depth, sources) and produce more comprehensive, factual content on the same topics, with figures and direct answers to buyer questions.",
     },
     "partially_cited": {
         "impact": 6, "effort": 4,
-        "fr": "Le site est cité sur certaines requêtes seulement : renforcer les pages proches des requêtes non citées.",
-        "en": "Site cited on some queries only: strengthen pages close to the non-cited queries.",
+        "fr": "Le site n'est cité que sur certaines requêtes : identifier les requêtes sans citation et renforcer les pages correspondantes (contenu dédié, FAQ, données structurées).",
+        "en": "The site is cited on some queries only: identify the uncited queries and strengthen the matching pages (dedicated content, FAQ, structured data).",
     },
 }
 
@@ -401,10 +472,16 @@ def build_action_plan(technical: dict, citations: dict, lang: str) -> list:
         actions.append("no_jsonld")
     if checks["extract"]["points"] < 30:
         actions.append("thin_content")
-    eeat_missing = " ".join(checks["eeat"].get("missing", []))
-    if "about" in eeat_missing:
+    eeat = checks["eeat"]
+    # Prefer machine codes; fall back to legacy English substring matching for
+    # audits generated before the codes existed.
+    missing_codes = eeat.get("missing_codes")
+    if missing_codes is None:
+        legacy = " ".join(eeat.get("missing", []))
+        missing_codes = ([c for c in ("about", "dates") if c in legacy])
+    if "about" in missing_codes:
         actions.append("no_about")
-    if "dates" in eeat_missing:
+    if "dates" in missing_codes:
         actions.append("no_dates")
 
     if citations.get("status") in ("ok", "partial"):
@@ -455,10 +532,11 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
             pass
 
     if fetch_error:
+        T = _TXT[lang if lang in _TXT else "en"]
         technical = {"score": 0, "word_count": 0, "checks": {},
-                     "error": f"site unreachable: {fetch_error}"}
+                     "error": T["site_unreachable"].format(err=fetch_error)}
     else:
-        technical = technical_audit(html, robots_text, final_url)
+        technical = technical_audit(html, robots_text, final_url, lang=lang)
 
     keyword = extract_keyword(html, domain) if html else domain
     citations = await citation_audit(domain, keyword, lang)
