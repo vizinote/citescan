@@ -33,8 +33,10 @@ for K in $KEYS; do
 done
 
 if [ "$CHANGED" = "1" ]; then
-  echo "clés modifiées — redémarrage du conteneur pour recharger l'env"
-  docker restart citescan-citescan-api-1
+  # ATTENTION : env_file n'est relu qu'à la (re)création du conteneur.
+  # `docker restart` ne recharge PAS l'env — il faut `compose up -d` (recreate).
+  echo "clés modifiées — recréation du conteneur pour recharger l'env"
+  docker compose -p citescan -f /opt/data/repos/citescan/deployment/docker-compose.yml up -d
 else
   echo "aucune modification"
 fi
