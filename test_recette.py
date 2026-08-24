@@ -119,5 +119,79 @@ check("writer: None sans cle",
       asyncio.run(audit.write_client_report({"score": {}, "technical": {}, "citations": {}}, "fr")) is None)
 audit.OPENROUTER_API_KEY = _old_key
 
+# --- prompt writer multi-moteurs (t_74e5bb97) : la narrative V4 pro compare ---
+# les moteurs au lieu de raconter « Perplexity » en dur.
+def _audit_stub(citations):
+    return {"domain": "https://x.fr", "keyword": "plombier",
+            "score": {"total": 55, "technical": 70, "citation": 27},
+            "technical": {"checks": {"robots": {"detail": "bots ok"}}},
+            "action_plan": [{"action": "Ajouter du JSON-LD.", "impact": 8, "effort": 3}],
+            "citations": citations}
+
+# mono-moteur historique (pas de clé "engines") : libellé Perplexity conservé
+p_mono = audit._writer_user_prompt(_audit_stub(
+    {"status": "ok", "cited_count": 4, "total": 15, "queries": [],
+     "competitors": [{"domain": "yelp.com", "count": 2}]}), "fr")
+check("writer mono FR : réponses de Perplexity (rétrocompat)",
+      "cité dans 4/15 réponses de Perplexity" in p_mono
+      and "×" not in p_mono and "{cite_context}" not in p_mono)
+
+# mono-moteur non-Perplexity : plus de « Perplexity » en dur
+p_chatgpt = audit._writer_user_prompt(_audit_stub(
+    {"status": "ok", "cited_count": 2, "total": 15, "queries": [], "competitors": [],
+     "engines_run": ["chatgpt"],
+     "engines": {"chatgpt": {"cited_count": 2, "total": 15}}}), "fr")
+check("writer mono ChatGPT : libellé dynamique",
+      "réponses de ChatGPT" in p_chatgpt and "réponses de Perplexity" not in p_chatgpt)
+
+# multi-moteurs FR : mesures requête × moteur + détail par moteur + écarts
+_multi_cit = {
+    "status": "partial", "cited_count": 1, "total": 6, "queries": [],
+    "competitors": [{"domain": "concurrent.fr", "count": 3}],
+    "engines_run": ["perplexity", "gemini", "claude"],
+    "engines": {
+        "perplexity": {"cited_count": 1, "total": 2, "engine_label": "Perplexity"},
+        "gemini": {"cited_count": 0, "total": 2, "engine_label": "Gemini"},
+        "claude": {"cited_count": 0, "total": 2, "engine_label": "Claude"}},
+    "matrix": [
+        {"query": "meilleur logiciel X ?",
+         "by_engine": {"perplexity": "yes", "gemini": "no", "claude": "error"}},
+        {"query": "acheter X en ligne ?",
+         "by_engine": {"perplexity": "no", "gemini": "no", "claude": "error"}}]}
+p_multi = audit._writer_user_prompt(_audit_stub(_multi_cit), "fr")
+check("writer multi FR : mesures requête × moteur + 2 questions",
+      "cité dans 1/6 mesures requête × moteur" in p_multi
+      and "2 questions d'intention d'achat posées à Perplexity, Gemini et Claude" in p_multi)
+check("writer multi FR : détail par moteur",
+      "Perplexity 1/2, Gemini 0/2, Claude 0/2" in p_multi)
+check("writer multi FR : écart cité dans le prompt",
+      "cité par Perplexity mais pas par Gemini" in p_multi)
+check("writer multi FR : hint comparaison dans la consigne synthèse",
+      "comparaison entre moteurs" in p_multi)
+check("writer multi FR : plus de « réponses de Perplexity » en dur",
+      "réponses de Perplexity" not in p_multi)
+
+p_multi_en = audit._writer_user_prompt(_audit_stub(_multi_cit), "en")
+check("writer multi EN : query × engine measurements",
+      "cited in 1/6 query × engine measurements" in p_multi_en
+      and "asked to Perplexity, Gemini and Claude" in p_multi_en
+      and "cited by Perplexity but not by Gemini" in p_multi_en
+      and "cross-engine comparison" in p_multi_en)
+
+# multi sans écart : mention explicite « les moteurs s'accordent »
+_same = dict(_multi_cit, matrix=[
+    {"query": "q1", "by_engine": {"perplexity": "yes", "gemini": "yes", "claude": "error"}}])
+p_same = audit._writer_user_prompt(_audit_stub(_same), "fr")
+check("writer multi sans écart : accord explicite",
+      "aucun (les moteurs s'accordent)" in p_same)
+
+# prompts deliverables : plus de « Perplexity » en dur dans l'en-tête verbatims
+check("deliverables FR : verbatims multi-IA génériques",
+      "les IA répondent réellement" in audit._DELIVERABLES_USER["fr"]
+      and "Perplexity répond" not in audit._DELIVERABLES_USER["fr"])
+check("deliverables EN : verbatims multi-IA génériques",
+      "AI engines actually answer" in audit._DELIVERABLES_USER["en"]
+      and "Perplexity actually answers" not in audit._DELIVERABLES_USER["en"])
+
 print(f"\nRECETTE: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)

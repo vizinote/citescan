@@ -930,33 +930,130 @@ _WRITER_SYSTEM = {
 _WRITER_USER = {
     "fr": """Voici les données brutes d'un audit de visibilité IA du site {domain}.
 Secteur détecté : « {keyword} ». Score global : {total}/100 (audit technique {tech}/100, \
-citations {cite}). Le site est cité dans {cited}/{n} réponses de Perplexity à des questions \
-d'intention d'achat. Concurrents les plus cités : {comps}.
+citations {cite}). Le site est cité dans {cited}/{n} {cite_context}. \
+Concurrents les plus cités : {comps}.
 Constats techniques : {tech_details}
 Plan d'action brut (déjà priorisé) : {plan}
 
 Rédige en français impeccable :
 1. "synthese" : 3 à 4 phrases honnêtes — où en est le site, l'enjeu business, ce que \
-le plan ci-dessous apporte.
+le plan ci-dessous apporte.{synthese_hint}
 2. "actions" : le plan d'action réécrit, 3 à 6 actions concrètes et précises (quoi faire, \
 où, avec quel outil ou quelle démarche), chacune avec "action" (texte), "impact" (1-10) et \
 "effort" (1-10). Garde l'ordre de priorité du plan brut.
 JSON attendu : {{"synthese": "...", "actions": [{{"action": "...", "impact": 8, "effort": 3}}]}}""",
     "en": """Here is the raw data of an AI visibility audit for {domain}.
 Detected sector: "{keyword}". Overall score: {total}/100 (technical audit {tech}/100, \
-citations {cite}). The site is cited in {cited}/{n} Perplexity answers to buyer-intent \
-questions. Most cited competitors: {comps}.
+citations {cite}). The site is cited in {cited}/{n} {cite_context}. \
+Most cited competitors: {comps}.
 Technical findings: {tech_details}
 Draft action plan (already prioritized): {plan}
 
 Write in impeccable English:
 1. "synthese": 3 to 4 honest sentences — where the site stands, the business stake, what \
-the plan below delivers.
+the plan below delivers.{synthese_hint}
 2. "actions": the rewritten action plan, 3 to 6 concrete, precise actions (what to do, \
 where, with which tool or approach), each with "action" (text), "impact" (1-10) and \
 "effort" (1-10). Keep the draft plan's priority order.
 Expected JSON: {{"synthese": "...", "actions": [{{"action": "...", "impact": 8, "effort": 3}}]}}""",
 }
+
+
+def _engine_label(citations: dict, name: str) -> str:
+    """Libellé d'affichage d'un moteur : résultat d'audit > registry > nom brut."""
+    r = (citations.get("engines") or {}).get(name) or {}
+    return (r.get("engine_label")
+            or (engines.ENGINES.get(name) or {}).get("label") or name)
+
+
+def _join_labels(labels: list, lang: str) -> str:
+    """« A, B et C » / "A, B and C" — jamais de trou si la liste est vide."""
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    return (" et " if lang == "fr" else " and ").join(
+        [", ".join(labels[:-1]), labels[-1]])
+
+
+def _writer_cite_context(citations: dict, lang: str) -> tuple:
+    """(cite_context, synthese_hint) pour le prompt V4 pro (t_74e5bb97).
+
+    Mono-moteur : libellé dynamique (plus de « Perplexity » en dur — un audit
+    ChatGPT seul ne doit pas raconter Perplexity). Multi-moteurs : mesures
+    requête × moteur + détail par moteur + principaux écarts (déterministe,
+    3 max pour borner le prompt) — la synthèse V4 compare les moteurs.
+    """
+    engines_map = citations.get("engines") or {}
+    names = citations.get("engines_run") or list(engines_map)
+    if len(names) <= 1:
+        label = _engine_label(citations, names[0]) if names else "Perplexity"
+        if lang == "fr":
+            return f"réponses de {label} à des questions d'intention d'achat", ""
+        return f"{label} answers to buyer-intent questions", ""
+
+    labels = [_engine_label(citations, n) for n in names]
+    per_engine = ", ".join(
+        f"{_engine_label(citations, n)} "
+        f"{(engines_map.get(n) or {}).get('cited_count') or 0}"
+        f"/{(engines_map.get(n) or {}).get('total') or 0}"
+        for n in names)
+    n_queries = max(((engines_map.get(n) or {}).get("total") or 0
+                     for n in names), default=0)
+    gaps = []
+    for row in citations.get("matrix") or []:
+        vals = row.get("by_engine") or {}
+        yes = _join_labels([_engine_label(citations, n)
+                            for n, v in vals.items() if v == "yes"], lang)
+        no = _join_labels([_engine_label(citations, n)
+                           for n, v in vals.items() if v == "no"], lang)
+        if yes and no:
+            gaps.append(f"« {row['query']} » : "
+                        + (f"cité par {yes} mais pas par {no}" if lang == "fr"
+                           else f"cited by {yes} but not by {no}"))
+        if len(gaps) >= 3:
+            break
+    if lang == "fr":
+        gaps_txt = "; ".join(gaps) or "aucun (les moteurs s'accordent)"
+        ctx = (f"mesures requête × moteur ({n_queries} questions d'intention "
+               f"d'achat posées à {_join_labels(labels, lang)}). Détail par "
+               f"moteur : {per_engine}. Écarts entre moteurs : {gaps_txt}")
+        hint = (" Mentionne explicitement la comparaison entre moteurs "
+                "(où le site est cité, où il ne l'est pas).")
+    else:
+        gaps_txt = "; ".join(gaps) or "none (engines agree)"
+        ctx = (f"query × engine measurements ({n_queries} buyer-intent "
+               f"questions asked to {_join_labels(labels, lang)}). Per-engine "
+               f"detail: {per_engine}. Gaps between engines: {gaps_txt}")
+        hint = (" Explicitly mention the cross-engine comparison (where the "
+                "site is cited, where it is not).")
+    return ctx, hint
+
+
+def _writer_user_prompt(audit_data: dict, lang: str) -> str:
+    """Prompt utilisateur V4 pro (extrait pour être testable hors ligne)."""
+    score = audit_data.get("score") or {}
+    technical = audit_data.get("technical") or {}
+    citations = audit_data.get("citations") or {}
+    cite_score = score.get("citation")
+    cite_txt = (f"{cite_score}/100" if cite_score is not None
+                else ("indisponible" if lang == "fr" else "unavailable"))
+    tech_details = "; ".join(
+        c.get("detail", "") for c in (technical.get("checks") or {}).values()
+    ) or (technical.get("error") or "")
+    comps = ", ".join(c["domain"] for c in (citations.get("competitors") or [])[:5]) or \
+        ("aucun" if lang == "fr" else "none")
+    plan_txt = " | ".join(a["action"] for a in (audit_data.get("action_plan") or [])) or \
+        ("aucun" if lang == "fr" else "none")
+    cite_context, synthese_hint = _writer_cite_context(citations, lang)
+    return _WRITER_USER[lang].format(
+        domain=audit_data.get("domain", ""),
+        keyword=audit_data.get("keyword", ""),
+        total=score.get("total", 0), tech=score.get("technical", 0), cite=cite_txt,
+        cited=citations.get("cited_count", 0), n=citations.get("total", 0),
+        cite_context=cite_context, synthese_hint=synthese_hint,
+        comps=comps, tech_details=tech_details[:1200], plan=plan_txt[:1500],
+    )
 
 
 def _parse_writer_output(raw: str) -> "dict | None":
@@ -1000,26 +1097,7 @@ async def write_client_report(audit_data: dict, lang: str) -> "dict | None":
     if not OPENROUTER_API_KEY:
         return None
     lang = lang if lang in _WRITER_SYSTEM else "en"
-    score = audit_data.get("score") or {}
-    technical = audit_data.get("technical") or {}
-    citations = audit_data.get("citations") or {}
-    cite_score = score.get("citation")
-    cite_txt = (f"{cite_score}/100" if cite_score is not None
-                else ("indisponible" if lang == "fr" else "unavailable"))
-    tech_details = "; ".join(
-        c.get("detail", "") for c in (technical.get("checks") or {}).values()
-    ) or (technical.get("error") or "")
-    comps = ", ".join(c["domain"] for c in (citations.get("competitors") or [])[:5]) or \
-        ("aucun" if lang == "fr" else "none")
-    plan_txt = " | ".join(a["action"] for a in (audit_data.get("action_plan") or [])) or \
-        ("aucun" if lang == "fr" else "none")
-    user = _WRITER_USER[lang].format(
-        domain=audit_data.get("domain", ""),
-        keyword=audit_data.get("keyword", ""),
-        total=score.get("total", 0), tech=score.get("technical", 0), cite=cite_txt,
-        cited=citations.get("cited_count", 0), n=citations.get("total", 0),
-        comps=comps, tech_details=tech_details[:1200], plan=plan_txt[:1500],
-    )
+    user = _writer_user_prompt(audit_data, lang)
     timeout = httpx.Timeout(90.0)
     for attempt in range(2):
         try:
@@ -1294,7 +1372,7 @@ POINTS FAIBLES TECHNIQUES DU CLIENT : {weaknesses}
 
 CONCURRENTS CITÉS PAR L'IA (domaine : nb de citations) : {comps}
 
-VERBATIMS — ce que Perplexity répond réellement aux questions d'acheteurs de ce secteur :
+VERBATIMS — ce que les IA répondent réellement aux questions d'acheteurs de ce secteur :
 {verbatims}
 
 PAGES CONCURRENTES CITÉES (récupérées pour comparaison) :
@@ -1334,7 +1412,7 @@ CLIENT TECHNICAL WEAKNESSES: {weaknesses}
 
 COMPETITORS CITED BY THE AI (domain: citation count): {comps}
 
-VERBATIMS — what Perplexity actually answers to buyer questions in this sector:
+VERBATIMS — what the AI engines actually answer to buyer questions in this sector:
 {verbatims}
 
 CITED COMPETITOR PAGES (fetched for comparison):
