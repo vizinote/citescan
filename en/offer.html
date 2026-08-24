@@ -74,9 +74,28 @@
           </p>
           <!--
           UNCOMMENT after Franck's validation and Payment Link creation:
-          <a class="btn btn--primary btn--block" href="REPLACE_WITH_STRIPE_PAYMENT_LINK">
-            Order — €29
-          </a>
+          domain form → Stripe. client_reference_id carries "<domain>|en":
+          it tells the delivery poller which site to audit (card 4).
+          <form id="order-form" onsubmit="return citescanCheckout(event, 'en')">
+            <label for="order-domain" style="display:block;margin-bottom:.4rem;font-weight:600;">
+              Your website to audit
+            </label>
+            <input id="order-domain" type="text" required placeholder="https://yoursite.com"
+                   style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:.8rem;">
+            <button type="submit" class="btn btn--primary btn--block">Order — €29</button>
+          </form>
+          <script>
+          const STRIPE_PAYMENT_LINK = "REPLACE_WITH_STRIPE_PAYMENT_LINK";
+          function citescanCheckout(e, lang) {
+            e.preventDefault();
+            const d = document.getElementById("order-domain").value.trim()
+                      .replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+            if (!d || d.indexOf(".") < 0) { alert("Please enter a valid domain."); return false; }
+            window.location.href = STRIPE_PAYMENT_LINK + "?client_reference_id=" +
+              encodeURIComponent(d + "|" + lang);
+            return false;
+          }
+          </script>
           -->
         </div>
       </div>

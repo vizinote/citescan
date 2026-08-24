@@ -118,11 +118,13 @@ def main() -> None:
     print("=" * 70)
     print()
     print("Prochaines étapes :")
-    print("  1. Copier cette URL dans offre.html et en/offer.html")
-    print("     (remplacer REPLACE_WITH_STRIPE_PAYMENT_LINK et décommenter le <a>)")
-    print("  2. Push + deploy")
-    print("  3. Carte 4 : configurer le webhook Stripe → pipeline d'audit")
-    print("  4. Carte 5 : test bout-en-bout avec achat réel remboursé")
+    print("  1. Enregistrer le lien pour le poller de livraison (carte 4) :")
+    print("     /opt/data/citescan-links.json →")
+    print(f'     {{"links": {{"{link.url}": ["audit", "Audit CiteScan 29 €"]}}}}')
+    print("  2. Copier cette URL dans offre.html et en/offer.html")
+    print("     (décommenter le formulaire, constante STRIPE_PAYMENT_LINK)")
+    print("  3. Push + deploy")
+    print("  4. Carte 5 : test bout-en-bout avec achat réel remboursé (verrou Franck)")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>CiteScan Report — {{ domain }}</title>
+<style>
+  :root {
+    --violet: #6d28d9; --emeraude: #10b981; --fond: #fafaf9; --texte: #1e293b;
+    --muted: #64748b; --warn: #d97706; --fail: #dc2626; --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "DejaVu Sans", system-ui, -apple-system, sans-serif; color: var(--texte);
+         background: var(--fond); margin: 0; line-height: 1.55; font-size: 14px; }
+  .page { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
+  header.band { background: var(--violet); color: #fff; padding: 28px 24px; }
+  header.band .page { padding: 0; }
+  .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; }
+  .brand span { opacity: .75; font-weight: 400; }
+  h1 { font-size: 1.7rem; margin: 12px 0 4px; }
+  h2 { color: var(--violet); font-size: 1.25rem; margin: 2.2rem 0 .8rem;
+       border-bottom: 2px solid var(--violet); padding-bottom: 4px; }
+  h3 { font-size: 1rem; margin: 1.2rem 0 .4rem; }
+  .domain { font-size: 1.05rem; opacity: .95; }
+  .date { opacity: .8; font-size: .85rem; }
+  .score-hero { display: flex; gap: 24px; align-items: center; background: #fff;
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-top: 24px; }
+  .score-big { font-size: 3rem; font-weight: 800; color: var(--violet); line-height: 1; }
+  .score-big small { font-size: 1.1rem; color: var(--muted); font-weight: 400; }
+  .score-sub { color: var(--muted); font-size: .9rem; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left;
+           font-size: .88rem; vertical-align: top; }
+  th { background: #f1f5f9; }
+  .chip { display: inline-block; padding: 2px 10px; border-radius: 999px; color: #fff;
+          font-size: .78rem; font-weight: 700; }
+  .chip.pass { background: var(--emeraude); } .chip.warn { background: var(--warn); }
+  .chip.fail { background: var(--fail); }
+  .check { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--emeraude);
+           border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+  .check.warn { border-left-color: var(--warn); } .check.fail { border-left-color: var(--fail); }
+  .check h3 { margin-top: 0; }
+  .pts { color: var(--muted); font-size: .85rem; }
+  .action { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+            padding: 12px 18px; margin: 10px 0; }
+  .action .rank { display: inline-block; background: var(--violet); color: #fff; width: 26px;
+    height: 26px; border-radius: 50%; text-align: center; line-height: 26px; font-weight: 700;
+    margin-right: 8px; }
+  .impact { color: var(--muted); font-size: .82rem; }
+  .cited-yes { color: var(--emeraude); font-weight: 700; }
+  .cited-no { color: var(--fail); font-weight: 700; }
+  .notice { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+            padding: 12px 16px; font-size: .9rem; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+           color: var(--muted); font-size: .82rem; }
+  @page { size: A4; margin: 18mm 14mm; }
+  @media print {
+    body { background: #fff; }
+    header.band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    h2 { page-break-after: avoid; }
+    .check, .action, table { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<header class="band">
+  <div class="page">
+    <div class="brand">CiteScan <span>by Brozapi</span></div>
+    <h1>AI Visibility Audit Report</h1>
+    <div class="domain">{{ domain }}</div>
+    <div class="date">Generated on {{ created_at }} — private report, do not share publicly</div>
+  </div>
+</header>
+
+<div class="page">
+
+  <div class="score-hero">
+    <div class="score-big">{{ score_total }}<small>/100</small></div>
+    <div>
+      <strong>Overall AI visibility score</strong>
+      <div class="score-sub">
+        Technical audit: {{ score_technical }}/100
+        {% if score_citation is not none %} · Citations: {{ score_citation }}/100 ({{ cited_count }}/{{ citations_total }} queries){% endif %}
+      </div>
+      <div class="score-sub">Detected sector keyword: "{{ keyword }}"</div>
+    </div>
+  </div>
+
+  {% if mode == "degraded" %}
+  <p class="notice">⚠ <strong>Degraded-mode report</strong>: Perplexity citation detection was
+  unavailable at generation time ({{ citations_reason }}). The score is based on the technical
+  audit only. Contact us for a free full regeneration.</p>
+  {% endif %}
+
+  {% if technical_error %}
+  <p class="notice">⚠ The site could not be fully analyzed: {{ technical_error }}.
+  The sections below are limited.</p>
+  {% endif %}
+
+  <h2>1. Detailed technical audit</h2>
+  <p>These four checks verify that AI crawlers can read and understand your site.
+  Content extractable without JavaScript: <strong>{{ word_count }} words</strong>.</p>
+
+  {% for c in checks %}
+  <div class="check {{ c.status }}">
+    <h3><span class="chip {{ c.status }}">{{ "OK" if c.status == "pass" else ("Improve" if c.status == "warn" else "Issue") }}</span>
+      {{ c.label }} <span class="pts">— {{ c.points }}/{{ c.max }} points</span></h3>
+    <p>{{ c.detail }}</p>
+    {% if c.bots %}
+    <table>
+      <tr><th>AI bot</th><th>Status</th></tr>
+      {% for bot, st in c.bots.items() %}
+      <tr><td>{{ bot }}</td><td>{{ "blocked" if st == "blocked" else ("allowed" if st == "allowed" else "not in file") }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+    {% if c.types %}<p>Detected JSON-LD types: {{ c.types | join(", ") }}</p>{% endif %}
+    {% if c.signals %}<p>Present signals: {{ c.signals | join(", ") }}</p>{% endif %}
+    {% if c.missing %}<p>Missing signals: {{ c.missing | join(", ") }}</p>{% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>2. Real citation detection (Perplexity)</h2>
+  {% if citations_status in ("ok", "partial") %}
+  <p>We asked Perplexity (Sonar model) <strong>{{ citations_total }} buyer-intent questions</strong>
+  in your sector. Your site is cited in
+  <strong>{{ cited_count }} answer(s) out of {{ citations_total }}</strong>.</p>
+  {% if citations_status == "partial" %}
+  <p class="notice">⚠ Some queries failed (API limit): partial results.</p>
+  {% endif %}
+  <table>
+    <tr><th>Tested query</th><th>Your site cited?</th><th>Cited competitors</th></tr>
+    {% for q in queries %}
+    <tr>
+      <td>{{ q.query }}</td>
+      <td>{% if q.error %}<span class="cited-no">error</span>{% elif q.cited %}<span class="cited-yes">✓ yes</span>{% else %}<span class="cited-no">✗ no</span>{% endif %}</td>
+      <td>{{ q.citations | join(", ") if q.citations else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if competitors %}
+  <h3>Most cited competitors</h3>
+  <table>
+    <tr><th>Domain</th><th>Citation count</th></tr>
+    {% for comp in competitors %}
+    <tr><td>{{ comp.domain }}</td><td>{{ comp.count }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% else %}
+  <p class="notice">Citation detection unavailable: {{ citations_reason }}.</p>
+  {% endif %}
+
+  <h2>3. Prioritized action plan</h2>
+  {% if action_plan %}
+  <p>Actions ranked by impact/effort ratio. Start with priority 1.</p>
+  {% for a in action_plan %}
+  <div class="action">
+    <span class="rank">{{ a.rank }}</span> {{ a.action }}
+    <div class="impact">Impact: {{ a.impact }}/10 · Effort: {{ a.effort }}/10</div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p>No priority action detected — your site already shows good AI visibility signals.</p>
+  {% endif %}
+
+  <h2>4. Methodology and limitations</h2>
+  <p>This audit combines: (1) a fully automated technical analysis of your homepage and
+  robots.txt; (2) 15 real queries asked to Perplexity Sonar in your site's language,
+  generated from your detected sector ("{{ keyword }}"). Citations in AI answers vary over
+  time and across users: this report is a snapshot at generation date, not a guarantee of
+  future citations.</p>
+
+  <footer>
+    <p><strong>CiteScan</strong> by Brozapi — contact@brozapi.com — https://citescan.brozapi.com<br>
+    7-day money-back guarantee: simply reply to the delivery email.<br>
+    CiteScan is a technical audit assisting AI search optimization. It is neither legal advice
+    nor a traffic guarantee. © {{ year }} Brozapi.</p>
+  </footer>
+</div>
+</body>
+</html>

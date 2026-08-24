@@ -6,11 +6,12 @@ import time
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, os.path.dirname(__file__))
 from audit import run_paid_audit  # noqa: E402
+import report as reports  # noqa: E402
 
 app = FastAPI()
 AI_BOTS = ["GPTBot", "ClaudeBot", "PerplexityBot", "Google-Extended", "CCBot"]
@@ -135,6 +136,85 @@ async def paid_audit(url: str, lang: str = "en"):
     lang = lang if lang in ("fr", "en") else "en"
     result = await run_paid_audit(url, lang=lang)
     return JSONResponse(result)
+
+
+# ---------------------------------------------------------------- paid reports (carte 3.4)
+
+INTERNAL_TOKEN = os.environ.get("CITESCAN_INTERNAL_TOKEN", "").strip()
+PUBLIC_BASE = "https://citescan.brozapi.com"
+
+
+def _check_internal(request: Request):
+    """POST /api/report runs the paid pipeline (~$0.15/audit): internal token required."""
+    if not INTERNAL_TOKEN:
+        return JSONResponse({"detail": "report creation disabled (no internal token)"},
+                            status_code=503)
+    if request.headers.get("X-Internal-Token", "") != INTERNAL_TOKEN:
+        return JSONResponse({"detail": "forbidden"}, status_code=403)
+    return None
+
+
+@app.post("/api/report")
+async def create_report(request: Request):
+    """Create a private report (HTML token page + PDF) from a paid audit.
+
+    Body: {"url": "...", "lang": "fr|en"} — or pass a precomputed "audit" dict.
+    Called by the delivery poller on localhost; protected by X-Internal-Token.
+    """
+    denied = _check_internal(request)
+    if denied:
+        return denied
+    body = await request.json()
+    lang = body.get("lang") if body.get("lang") in ("fr", "en") else "en"
+    audit = body.get("audit")
+    url = body.get("url", "")
+    if not audit:
+        if not url:
+            return JSONResponse({"detail": "url or audit required"}, status_code=400)
+        audit = await run_paid_audit(url, lang=lang)
+    domain = audit.get("domain") or url
+    rep = reports.create_report(domain, lang, audit)
+    token = rep["token"]
+    return JSONResponse({
+        "token": token,
+        "domain": domain,
+        "lang": lang,
+        "mode": (audit.get("score") or {}).get("mode", "degraded"),
+        "score": (audit.get("score") or {}).get("total"),
+        "url_html": f"{PUBLIC_BASE}/rapports/{token}",
+        "url_pdf": f"{PUBLIC_BASE}/rapports/{token}/pdf",
+    })
+
+
+@app.get("/rapports/{token}", response_class=HTMLResponse)
+def report_html(token: str):
+    rep = reports.get_report(token)
+    if not rep:
+        return HTMLResponse("Rapport introuvable / Report not found.", status_code=404)
+    return HTMLResponse(
+        reports.render_html(rep),
+        headers={"X-Robots-Tag": "noindex, nofollow"},
+    )
+
+
+@app.get("/rapports/{token}/pdf")
+def report_pdf(token: str):
+    rep = reports.get_report(token)
+    if not rep:
+        return JSONResponse({"detail": "not found"}, status_code=404)
+    try:
+        pdf = reports.render_pdf(rep)
+    except RuntimeError as e:
+        return JSONResponse({"detail": str(e)}, status_code=503)
+    slug = rep["domain"].replace("https://", "").replace("http://", "").replace("/", "_")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="citescan-rapport-{slug}.pdf"',
+            "X-Robots-Tag": "noindex, nofollow",
+        },
+    )
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")

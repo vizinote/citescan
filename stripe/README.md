@@ -32,15 +32,23 @@ Tant que le verrou est actif :
    ```
 
 2. **Lier le Payment Link aux pages** :
-   - `offre.html` : remplacer le `<button disabled>` par `<a class="btn btn--primary btn--block" href="<URL>">Commander — 29 €</a>`
-   - `en/offer.html` : idem avec la version EN
+   - `offre.html` et `en/offer.html` : remplacer le `<button disabled>` par le formulaire
+     domaine → Stripe fourni en commentaire dans chaque page (constante `STRIPE_PAYMENT_LINK`
+     à renseigner). Le formulaire redirige vers
+     `<URL>?client_reference_id=<domaine>|<lang>` : **c'est ce qui permet au poller de
+     livraison de savoir quel site auditer et dans quelle langue rédiger le rapport.**
    - Supprimer le bloc `.cta-disabled-notice`
 
-3. **Commit + push + deploy** sur `citescan.brozapi.com`.
+3. **Enregistrer le lien pour le poller de livraison** (carte 4) : créer sur le VPS
+   `/opt/data/citescan-links.json` :
+   ```json
+   {"links": {"https://buy.stripe.com/<id>": ["audit", "Audit CiteScan 29 €"]}}
+   ```
+   Sans ce fichier, `/root/citescan-deliveries.py` ignore toutes les sessions (rien n'est livré).
 
-4. **Configurer le webhook Stripe** (carte 4) : endpoint `https://api.brozapi.com/citescan/webhook` (ou équivalent), événement `checkout.session.completed` → déclenche le pipeline d'audit.
+4. **Commit + push + deploy** sur `citescan.brozapi.com`.
 
-5. **Test bout-en-bout** (carte 5) : achat réel de 29 € → vérifier la réception du rapport → rembourser via le dashboard Stripe.
+5. **Test bout-en-bout** (carte 5) : achat réel de 29 € → vérifier la réception du rapport → rembourser via le dashboard Stripe (tout remboursement reste un verrou Franck).
 
 ## Clés et secrets
 
@@ -55,7 +63,10 @@ Tant que le verrou est actif :
 - Pas de clé publique exposée
 - Stripe gère la page de paiement (PCI-DSS out-of-scope)
 - Redirection après paiement vers `/merci.html` (noindex)
-- Compatible avec le `client_reference_id` pour traçabilité (à ajouter via webhook)
+- Le domaine à auditer + la langue du parcours voyagent dans `client_reference_id`
+  (format `<domaine>|<lang>`, ex. `example.com|fr`), posé par le formulaire de la page offre
+- Pas de webhook : livraison par polling (`/root/citescan-deliveries.py`, cron */5,
+  calqué sur `/root/accessicheck-deliveries.py`) — voir carte 4
 
 ## Tarification Stripe
 

@@ -74,9 +74,28 @@
           </p>
           <!--
           À DÉCOMMENTER après validation Franck et création du Payment Link :
-          <a class="btn btn--primary btn--block" href="REPLACE_WITH_STRIPE_PAYMENT_LINK">
-            Commander — 29&nbsp;€
-          </a>
+          formulaire domaine → Stripe. Le client_reference_id transporte
+          "<domaine>|fr" : c'est ce qui déclenche l'audit du bon site (carte 4).
+          <form id="order-form" onsubmit="return citescanCheckout(event, 'fr')">
+            <label for="order-domain" style="display:block;margin-bottom:.4rem;font-weight:600;">
+              Votre site à auditer
+            </label>
+            <input id="order-domain" type="text" required placeholder="https://votresite.fr"
+                   style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:.8rem;">
+            <button type="submit" class="btn btn--primary btn--block">Commander — 29&nbsp;€</button>
+          </form>
+          <script>
+          const STRIPE_PAYMENT_LINK = "REPLACE_WITH_STRIPE_PAYMENT_LINK";
+          function citescanCheckout(e, lang) {
+            e.preventDefault();
+            const d = document.getElementById("order-domain").value.trim()
+                      .replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+            if (!d || d.indexOf(".") < 0) { alert("Veuillez saisir un domaine valide."); return false; }
+            window.location.href = STRIPE_PAYMENT_LINK + "?client_reference_id=" +
+              encodeURIComponent(d + "|" + lang);
+            return false;
+          }
+          </script>
           -->
         </div>
       </div>

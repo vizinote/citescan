@@ -7,8 +7,16 @@ services:
     restart: unless-stopped
     ports:
       - "8083:8000"
+    env_file:
+      # PERPLEXITY_API_KEY + CITESCAN_INTERNAL_TOKEN (host-only, jamais dans le repo)
+      - /root/.hermes/citescan.env
+    volumes:
+      # SQLite des rapports (tokens) — survit aux redéploiements
+      - citescan-data:/data
     networks:
       - badgeia-net
 networks:
   badgeia-net:
     external: true
+volumes:
+  citescan-data:
