@@ -71,6 +71,8 @@ r = client.get("/blog/index.html")
 check("blog index non reservi en double", r.status_code == 404)
 r = client.get("/secteurs/inexistant.html")
 check("secteur inconnu 404", r.status_code == 404)
+r = client.get("/sitemap.xml")
+check("sitemap exclut le gabarit _template", "_template" not in r.text)
 
 print(f"\n{PASS} PASS, {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

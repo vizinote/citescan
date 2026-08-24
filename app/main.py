@@ -430,7 +430,7 @@ def _seo_files(kind):
         return []
     return sorted(
         fn for fn in os.listdir(d)
-        if fn.endswith(".html") and fn != "index.html"
+        if re.fullmatch(r"[a-z0-9\-]+\.html", fn) and fn != "index.html"
     )
 
 
