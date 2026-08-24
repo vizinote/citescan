@@ -270,5 +270,126 @@ class TestPDF(unittest.TestCase):
         self.assertGreater(len(pdf), 5000)
 
 
+# ---------------------------------------------------------------- anti-trou
+# Recette t_72143dd9 : aucune phrase du rapport (ou de l'email de livraison)
+# ne doit contenir de trou laissé par une variable de gabarit non injectée.
+
+import re  # noqa: E402
+
+
+def _text(html_page):
+    """Gèle le texte rendu : tags -> newline, entités décodées."""
+    t = re.sub(r"<script.*?</script>", " ", html_page, flags=re.S)
+    t = re.sub(r"<style.*?</style>", " ", t, flags=re.S)
+    t = re.sub(r"<[^>]+>", "\n", t)
+    import html as _h
+    return _h.unescape(t)
+
+
+def assert_no_hole(testcase, raw_html, label):
+    """Vérifie qu'AUCUNE phrase du document rendu ne contient de trou."""
+    # 1. restes de gabarit Jinja non rendus
+    testcase.assertNotRegex(raw_html, r"\{\{|\{%", f"{label}: gabarit Jinja non rendu")
+    # 2. balise <strong> vide (variable injectée vide)
+    testcase.assertNotRegex(raw_html, r"<strong>\s*</strong>",
+                            f"{label}: <strong> vide")
+    # 3. 'None' injecté par une variable Python None
+    testcase.assertNotRegex(raw_html, r">\s*None\s*<", f"{label}: 'None' injecté")
+    text = _text(raw_html)
+    # 4. double espace avant une ponctuation (marque d'un trou)
+    testcase.assertIsNone(
+        re.search(r"\S  +[,:.;!?]", text),
+        f"{label}: double espace avant ponctuation")
+    # 5. la phrase re-scan doit finir par une date, pas par un trou
+    for m in re.finditer(r"(à partir du|becomes active on)\s*\n?\s*([^\n<]*)", text):
+        suite = m.group(2).strip()
+        testcase.assertTrue(
+            re.match(r"(\d{4}-\d{2}-\d{2}|J\+30|day 30)", suite),
+            f"{label}: date de re-scan absente après « {m.group(1)} » (trouvé: {suite!r})")
+    # 6. la phrase d'intro des verbatims doit contenir les compteurs
+    for m in re.finditer(r"(Nous avons posé|We asked Perplexity)([^\n]*\n?[^\n]*)", text):
+        phrase = m.group(0)
+        testcase.assertRegex(phrase, r"\d+",
+                             f"{label}: compteurs absents de l'intro verbatims")
+
+
+class TestNoHoles(unittest.TestCase):
+    """Non-régression t_72143dd9 : gel du texte rendu, zéro trou toléré."""
+
+    def _render(self, lang, mode="full", tamper=None):
+        rep = reports.create_report(f"https://hole-{mode}.{lang}", lang,
+                                    sample_audit(mode))
+        got = reports.get_report(rep["token"])
+        if tamper:
+            tamper(got)
+        return reports.render_html(got)
+
+    def test_no_hole_fr_full(self):
+        assert_no_hole(self, self._render("fr"), "rapport FR")
+
+    def test_no_hole_en_full(self):
+        assert_no_hole(self, self._render("en"), "rapport EN")
+
+    def test_no_hole_fr_degraded(self):
+        assert_no_hole(self, self._render("fr", "degraded"), "rapport FR dégradé")
+
+    def test_no_hole_en_degraded(self):
+        assert_no_hole(self, self._render("en", "degraded"), "rapport EN dégradé")
+
+    def test_rescan_date_fallback_when_eligible_at_missing(self):
+        """Si eligible_at est vide en DB, la date J+30 est recalculée — jamais de trou."""
+        def tamper(rep):
+            rep["rescan"]["eligible_at"] = ""
+        html_page = self._render("fr", tamper=tamper)
+        self.assertNotRegex(html_page, r"à partir du\s*<strong>\s*</strong>")
+        m = re.search(r"à partir du\s*<strong>([^<]+)</strong>", html_page)
+        self.assertIsNotNone(m)
+        self.assertRegex(m.group(1), r"\d{4}-\d{2}-\d{2}",
+                         "le fallback doit recalculer la date J+30")
+
+    def test_counters_none_safe(self):
+        """cited_count/total=None dans l'audit -> 0 rendu, jamais 'None'."""
+        def tamper(rep):
+            rep["audit"]["citations"]["cited_count"] = None
+            rep["audit"]["citations"]["total"] = None
+        html_page = self._render("fr", tamper=tamper)
+        self.assertNotIn("None", _text(html_page))
+        self.assertIn("0 réponse(s) sur\n  0", html_page)
+
+    def test_no_hole_rescan_pages(self):
+        rep = reports.create_report("https://hole-rescan.fr", "fr", sample_audit())
+        for status in ("pending", "running"):
+            reports.set_rescan_status(rep["rescan_token"], status)
+            page = reports.render_rescan_page(reports.get_rescan(rep["rescan_token"]))
+            assert_no_hole(self, page, f"page rescan {status}")
+            self.assertNotRegex(_text(page), r"à partir du\s*[.:]?\s*$")
+
+    def test_no_hole_delivery_email(self):
+        """L'email de livraison (source canonique deployment/) ne contient aucun trou,
+        même quand rescan_date est None (fallback J+30 / day 30)."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "deliveries",
+            os.path.join(os.path.dirname(__file__),
+                         "deployment", "citescan-deliveries.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        for lang, marker in (("fr", "J+30"), ("en", "day 30")):
+            _s, text, html_mail = mod.email_body(
+                "https://plombier-example.fr", lang,
+                "https://citescan.brozapi.com/rapports/xxx", 55, "full",
+                top_actions=["Ajouter des dates de publication."],
+                url_rescan="https://citescan.brozapi.com/rescan/yyy",
+                rescan_date=None)
+            self.assertIn(marker, text, f"email {lang}: fallback date absent")
+            for doc, lbl in ((text, f"email texte {lang}"),
+                             (html_mail, f"email html {lang}")):
+                self.assertNotRegex(doc, r"\{\{|\{%")
+                self.assertIsNone(re.search(r"\S  +[,:.;!?]", _text(doc)),
+                                  f"{lbl}: double espace avant ponctuation")
+                self.assertNotRegex(doc, r"à partir du\s*[:.]?\s*$",
+                                    f"{lbl}: trou après 'à partir du'")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

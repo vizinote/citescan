@@ -209,6 +209,35 @@ ok "rescan J+30 : page 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/res
 has "rescan J+30 : pas encore eligible (J+30)" "$(curl -s "$BASE/rescan/$RESCAN_TOK")" "disponible"
 ok "rescan inconnu -> 404" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rescan/token-inconnu-xxxxxxxx")" "404"
 
+# --- 5a-bis. ANTI-TROU (recette t_72143dd9) : gel du texte rendu, aucune
+# phrase du rapport ne doit contenir de trou (variable non injectee).
+noholes() { # $1 = fichier HTML du rapport gelé
+  python3 - "$1" <<'PYEOF'
+import html, re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+bad = []
+if re.search(r"\{\{|\{%", raw): bad.append("gabarit Jinja non rendu")
+if re.search(r"<strong>\s*</strong>", raw): bad.append("<strong> vide")
+if re.search(r">\s*None\s*<", raw): bad.append("'None' injecte")
+t = re.sub(r"<script.*?</script>", " ", raw, flags=re.S)
+t = re.sub(r"<style.*?</style>", " ", t, flags=re.S)
+t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
+if re.search(r"\S  +[,:.;!?]", t): bad.append("double espace avant ponctuation")
+for m in re.finditer(r"(à partir du|becomes active on)\s*\n?\s*([^\n<]*)", t):
+    if not re.match(r"(\d{4}-\d{2}-\d{2}|J\+30|day 30)", m.group(2).strip()):
+        bad.append("date re-scan absente apres: " + m.group(1))
+for m in re.finditer(r"(Nous avons posé|We asked Perplexity)([^\n]*\n?[^\n]*)", t):
+    if not re.search(r"\d+", m.group(0)):
+        bad.append("compteurs verbatims absents")
+print("TROU:" + "; ".join(bad) if bad else "OK")
+PYEOF
+}
+ok "rapport FR : aucun trou (texte gele)" "$(noholes /tmp/t_rep_fr.html)" "OK"
+ok "rapport FR : date re-scan J+30 injectee" \
+  "$(printf '%s' "$HFR" | grep -qE 'à partir du\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
+ok "rapport FR : compteurs verbatims injectes" \
+  "$(printf '%s' "$HFR" | grep -qE 'posé <strong>[0-9]+ questions' && echo oui)" "oui"
+
 REN=$(curl -s -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
       -d "{\"lang\":\"en\",\"audit\":$(cat /tmp/t_audit_en.json)}" "$BASE/api/report")
 TOKEN_EN=$(printf '%s' "$REN" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
@@ -232,6 +261,13 @@ has "rapport EN : JSON-LD FAQPage" "$HEN" "FAQPage"
 has "rapport EN : CMS instruction (Custom Code)" "$HEN" "Custom Code"
 has "rapport EN : rescan J+30" "$HEN" "Measure your progress in 30 days"
 has "robots.txt : /rescan/ disallow" "$(curl -s "$BASE/robots.txt")" "Disallow: /rescan/"
+
+printf '%s' "$HEN" > /tmp/t_rep_en.html
+ok "rapport EN : aucun trou (texte gele)" "$(noholes /tmp/t_rep_en.html)" "OK"
+ok "rapport EN : date re-scan J+30 injectee" \
+  "$(printf '%s' "$HEN" | grep -qE 'becomes active on\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
+ok "rapport EN : compteurs verbatims injectes" \
+  "$(printf '%s' "$HEN" | grep -qE 'We asked Perplexity <strong>[0-9]+ buyer-intent' && echo oui)" "oui"
 
 PDF=$(curl -s -o /tmp/t_rep.pdf -w "%{http_code}" "$BASE/rapports/$TOKFR/pdf")
 ok "PDF FR -> 200" "$PDF" "200"
@@ -292,6 +328,7 @@ else
   PDFR=$(curl -s -o /tmp/t_real_fr.pdf -w "%{http_code}" "$BASE/rapports/$TOKREAL/pdf")
   ok "reel FR : PDF -> 200" "$PDFR" "200"
   has "reel FR : vrai PDF" "$(head -c 5 /tmp/t_real_fr.pdf)" "%PDF-"
+  ok "reel FR : aucun trou (texte gele)" "$(noholes /tmp/t_real_fr.html)" "OK"
 
   # Rapport live EN (lance en parallele ci-dessus) — memes controles niveau 2
   echo "--- live EN (pipeline reel brozapi.com) ---"
@@ -309,6 +346,7 @@ else
   PDFEN=$(curl -s -o /tmp/t_real_en.pdf -w "%{http_code}" "$BASE/rapports/$TOKRENL/pdf")
   ok "reel EN : PDF -> 200" "$PDFEN" "200"
   has "reel EN : vrai PDF" "$(head -c 5 /tmp/t_real_en.pdf)" "%PDF-"
+  ok "reel EN : aucun trou (texte gele)" "$(noholes /tmp/t_real_en.html)" "OK"
   echo "$TOKREAL $TOKRENL" > /tmp/t_live_tokens.txt
 fi
 

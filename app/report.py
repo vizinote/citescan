@@ -212,8 +212,9 @@ def render_rescan_page(rescan: dict) -> str:
     elif status == "running":
         body = f"<h1>{T['title']}</h1><p>{T['running']}</p>"
     elif now < rescan["eligible_at"]:
+        date = (rescan.get("eligible_at") or "")[:10] or f"J+{RESCAN_DELAY_DAYS}"
         body = (f"<h1>{T['title']}</h1>"
-                f"<p>{T['early'].format(date=rescan['eligible_at'][:10])}</p>")
+                f"<p>{T['early'].format(date=date)}</p>")
     else:
         body = f"<h1>{T['title']}</h1><p>{T['launched']}</p>"
         refresh = '<meta http-equiv="refresh" content="20">'
@@ -263,6 +264,19 @@ def _build_context(report: dict) -> dict:
     cms = audit.get("cms") or {}
     rescan = report.get("rescan") or {}
 
+    # Date d'activation du re-scan : si la ligne DB n'a pas d'eligible_at
+    # (ne doit pas arriver, mais un trou dans la phrase est inacceptable a
+    # 29 EUR — recette t_72143dd9), on recalcule J+30 depuis created_at.
+    rescan_date = (rescan.get("eligible_at") or "")[:10]
+    if rescan.get("url") and not rescan_date:
+        try:
+            created = time.strptime(report["created_at"][:19], "%Y-%m-%dT%H:%M:%S")
+            rescan_date = time.strftime(
+                "%Y-%m-%d",
+                time.gmtime(time.mktime(created) + RESCAN_DELAY_DAYS * 86400))
+        except (ValueError, OverflowError):
+            rescan_date = f"J+{RESCAN_DELAY_DAYS}"
+
     return {
         "lang": lang,
         "domain": report["domain"],
@@ -277,8 +291,8 @@ def _build_context(report: dict) -> dict:
         "checks": checks,
         "citations_status": citations.get("status", "unavailable"),
         "citations_reason": citations.get("reason", ""),
-        "cited_count": citations.get("cited_count", 0),
-        "citations_total": citations.get("total", 0),
+        "cited_count": citations.get("cited_count") or 0,
+        "citations_total": citations.get("total") or 0,
         "queries": citations.get("queries") or [],
         "competitors": citations.get("competitors") or [],
         "action_plan": audit.get("action_plan") or [],
@@ -294,7 +308,7 @@ def _build_context(report: dict) -> dict:
         "cms_label": cms.get("label", ""),
         "cms_instruction": cms.get("instruction", ""),
         "rescan_url": rescan.get("url", ""),
-        "rescan_date": (rescan.get("eligible_at") or "")[:10],
+        "rescan_date": rescan_date,
         "year": time.strftime("%Y"),
     }
 
