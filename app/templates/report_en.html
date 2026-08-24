@@ -71,6 +71,11 @@
              word-break: break-word; }
   .annexe { color: var(--muted); font-size: .85rem; text-transform: uppercase;
             letter-spacing: 1px; margin-top: 3rem; }
+  .howto { background: #f5f3ff; border: 1px solid #ddd6fe; border-left: 4px solid var(--violet);
+           border-radius: 8px; padding: 12px 18px; margin: 10px 0 18px; }
+  .howto p { margin: 0; }
+  .plain { color: #334155; font-style: italic; margin-top: 6px; }
+  .bots-legend { color: var(--muted); font-size: .85rem; margin-bottom: 4px; }
   footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
            color: var(--muted); font-size: .82rem; }
   @page { size: A4; margin: 18mm 14mm; }
@@ -301,6 +306,13 @@
   {% endif %}
 
   <h2>Detailed technical audit</h2>
+  <div class="howto">
+    <p><strong>How to read this appendix.</strong> The 4 checks below verify that AIs can read,
+    understand and trust your site; each shows a status (OK / Improve / Problem), points out
+    of 100, and one plain sentence explaining the concrete impact for you. No need to
+    understand everything: fix the "Problem" items first, then the "Improve" ones, following
+    the action plan at the start of the report.</p>
+  </div>
   <p>These four checks verify that AI bots can read and understand your site.</p>
 
   {% for c in checks %}
@@ -308,7 +320,10 @@
     <h3><span class="chip {{ c.status }}">{{ "OK" if c.status == "pass" else ("Improve" if c.status == "warn" else "Problem") }}</span>
       {{ c.label }} <span class="pts">— {{ c.points }}/{{ c.max }} points</span></h3>
     <p>{{ c.detail }}</p>
+    {% if c.plain %}<p class="plain">{{ c.plain }}</p>{% endif %}
     {% if c.bots %}
+    <p class="bots-legend">Each row is one AI's crawler: "allowed" = it can read your site,
+    "blocked" = that AI can never cite you, "absent" = allowed by default.</p>
     <table>
       <tr><th>AI bot</th><th>Status</th></tr>
       {% for bot, st in c.bots.items() %}

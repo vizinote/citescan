@@ -231,6 +231,19 @@ class TestRenderFR(unittest.TestCase):
         self.assertIn("mode dégradé", self.html_degraded)
         self.assertIn("indisponible", self.html_degraded)
 
+    def test_annexe_vulgarisee_fr(self):
+        """Annexe lisible TPE (t_7c78a520) : encart de lecture + une phrase
+        simple par contrôle + légende du tableau des bots."""
+        self.assertIn("Comment lire cette annexe", self.html)
+        self.assertIn("robots.txt est le fichier qui autorise ou non les robots des IA",
+                      self.html)
+        self.assertIn("Les IA lisent le texte brut de votre page", self.html)
+        self.assertIn("Le JSON-LD est une étiquette invisible", self.html)
+        self.assertIn("Les IA préfèrent citer des sites crédibles", self.html)
+        self.assertIn("autorisé » = il peut", self.html)  # légende tableau bots
+        # présent aussi en mode dégradé
+        self.assertIn("Comment lire cette annexe", self.html_degraded)
+
 
 class TestRenderEN(unittest.TestCase):
     @classmethod
@@ -256,6 +269,16 @@ class TestRenderEN(unittest.TestCase):
     def test_bilingual_check_labels(self):
         self.assertIn("AI bots in robots.txt", self.html)
         self.assertIn("Structured data (JSON-LD)", self.html)
+
+    def test_annexe_vulgarisee_en(self):
+        """Plain-language appendix (t_7c78a520): how-to box + one plain sentence
+        per check + bots table legend."""
+        self.assertIn("How to read this appendix", self.html)
+        self.assertIn("robots.txt is the file that allows or blocks AI crawlers", self.html)
+        self.assertIn("AIs read the raw text of your page", self.html)
+        self.assertIn("JSON-LD is an invisible label", self.html)
+        self.assertIn("AIs prefer citing credible sites", self.html)
+        self.assertIn('"allowed" = it can read your site', self.html)  # bots legend
 
 
 class TestPDF(unittest.TestCase):

@@ -27,11 +27,41 @@ _jinja = Environment(
     autoescape=select_autoescape(["html"]),
 )
 
+# Chaque contrôle porte une phrase « plain » en français courant (t_7c78a520) :
+# ce que c'est, pourquoi ça compte pour être cité, et l'impact concret.
 CHECK_META = {
-    "robots": {"max": 30, "fr": "Bots IA dans robots.txt", "en": "AI bots in robots.txt"},
-    "extract": {"max": 30, "fr": "Extractabilité du contenu", "en": "Content extractability"},
-    "jsonld": {"max": 20, "fr": "Données structurées (JSON-LD)", "en": "Structured data (JSON-LD)"},
-    "eeat": {"max": 20, "fr": "Signaux de confiance (E-E-A-T)", "en": "Trust signals (E-E-A-T)"},
+    "robots": {"max": 30, "fr": "Bots IA dans robots.txt", "en": "AI bots in robots.txt",
+               "plain": {
+                   "fr": "robots.txt est le fichier qui autorise ou non les robots des IA à "
+                         "lire votre site — un robot « bloqué » signifie que l'IA correspondante "
+                         "ne peut pas vous lire, donc jamais vous citer.",
+                   "en": "robots.txt is the file that allows or blocks AI crawlers from reading "
+                         "your site — a 'blocked' bot means that AI cannot read you, so it can "
+                         "never cite you."}},
+    "extract": {"max": 30, "fr": "Extractabilité du contenu", "en": "Content extractability",
+                "plain": {
+                    "fr": "Les IA lisent le texte brut de votre page, sans JavaScript — il faut "
+                          "assez de texte visible (au moins 300 mots et un titre) pour qu'elles "
+                          "comprennent votre offre et puissent la citer.",
+                    "en": "AIs read the raw text of your page, without JavaScript — they need "
+                          "enough visible text (at least 300 words and a heading) to understand "
+                          "your offer and be able to cite it."}},
+    "jsonld": {"max": 20, "fr": "Données structurées (JSON-LD)", "en": "Structured data (JSON-LD)",
+               "plain": {
+                   "fr": "Le JSON-LD est une étiquette invisible qui déclare aux IA qui vous "
+                         "êtes (nom, activité, horaires…) — sans elle, l'IA doit deviner et "
+                         "risque de vous décrire de travers, voire de ne pas vous citer.",
+                   "en": "JSON-LD is an invisible label that tells AIs who you are (name, "
+                         "business, hours…) — without it, the AI has to guess and may describe "
+                         "you incorrectly, or not cite you at all."}},
+    "eeat": {"max": 20, "fr": "Signaux de confiance (E-E-A-T)", "en": "Trust signals (E-E-A-T)",
+             "plain": {
+                 "fr": "Les IA préfèrent citer des sites crédibles — page « à propos », dates "
+                       "de publication, auteur identifié et HTTPS rassurent ; chaque signal "
+                       "manquant rend votre site moins crédible que vos concurrents.",
+                 "en": "AIs prefer citing credible sites — an 'about' page, publication dates, "
+                       "an identified author and HTTPS build trust; each missing signal makes "
+                       "your site less credible than competitors."}},
 }
 
 # ---------------------------------------------------------------- storage
@@ -254,6 +284,7 @@ def _build_context(report: dict) -> dict:
             "points": c.get("points", 0),
             "max": meta["max"],
             "detail": c.get("detail", ""),
+            "plain": meta.get("plain", {}).get(lang) or meta.get("plain", {}).get("en", ""),
             "bots": c.get("bots") or {},
             "types": c.get("types") or [],
             "signals": c.get("signals") or [],
