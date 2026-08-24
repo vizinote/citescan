@@ -2,6 +2,11 @@
 # citescan-tests.sh — tests bout-en-bout CiteScan (carte recette 2026-08-24).
 # "Teste bout-en-bout" = sortie de ce script. Exit code != 0 si un test echoue.
 # Usage : run-script citescan-tests.sh   (ou bash /root/citescan-tests.sh)
+# Modes (t_74e5bb97) : un audit live multi-moteurs dure ~7 min ; les 2 audits
+# live + les sections fixtures peuvent depasser le timeout 570s de la porte.
+#   SKIP_LIVE=1  -> tout sauf les audits live (rapide, ~1 min)
+#   LIVE_ONLY=1  -> uniquement les audits live + site public (~9-10 min)
+# Wrappers installes : citescan-tests-nolive.sh / citescan-tests-live.sh
 set -u
 BASE="${CITESCAN_BASE:-http://127.0.0.1:8083}"
 PUB="${CITESCAN_PUBLIC:-https://citescan.brozapi.com}"
@@ -12,8 +17,38 @@ ok()    { if [ "$2" = "$3" ]; then echo "PASS $1"; PASS=$((PASS+1)); else echo "
 has()   { case "$2" in *"$3"*) echo "PASS $1"; PASS=$((PASS+1));; *) echo "FAIL $1 -- chaine absente: $3"; FAIL=$((FAIL+1));; esac; }
 hasnot(){ case "$2" in *"$3"*) echo "FAIL $1 -- chaine interdite presente: $3"; FAIL=$((FAIL+1));; *) echo "PASS $1"; PASS=$((PASS+1));; esac; }
 
+# --- ANTI-TROU (recette t_72143dd9) : gel du texte rendu, aucune
+# phrase du rapport ne doit contenir de trou (variable non injectee).
+# Fonction partagee fixtures + live — definie AVANT les modes SKIP/LIVE_ONLY.
+noholes() { # $1 = fichier HTML du rapport gelé
+  python3 - "$1" <<'PYEOF'
+import html, re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+bad = []
+if re.search(r"\{\{|\{%", raw): bad.append("gabarit Jinja non rendu")
+if re.search(r"<strong>\s*</strong>", raw): bad.append("<strong> vide")
+if re.search(r">\s*None\s*<", raw): bad.append("'None' injecte")
+t = re.sub(r"<script.*?</script>", " ", raw, flags=re.S)
+t = re.sub(r"<style.*?</style>", " ", t, flags=re.S)
+t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
+if re.search(r"\S  +[,:.;!?]", t): bad.append("double espace avant ponctuation")
+# Phrases de GABARIT uniquement (t_74e5bb97) : un verbatim IA peut contenir
+# « à partir du 1er septembre » en prose legitime — ce n'est PAS un trou.
+for m in re.finditer(r"(actif à partir du|disponible à partir du|becomes active on|available from)\s*\n?\s*([^\n<]*)", t):
+    if not re.match(r"(\d{4}-\d{2}-\d{2}|J\+30|day 30)", m.group(2).strip()):
+        bad.append("date re-scan absente apres: " + m.group(1))
+for m in re.finditer(r"(Nous avons posé|We asked)([^\n]*\n?[^\n]*)", t):
+    if not re.search(r"\d+", m.group(0)):
+        bad.append("compteurs verbatims absents")
+print("TROU:" + "; ".join(bad) if bad else "OK")
+PYEOF
+}
+
 echo "===== CiteScan tests bout-en-bout — $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
 echo "BASE=$BASE PUB=$PUB"
+
+if [ "${LIVE_ONLY:-0}" != "1" ]; then
+# ================= sections fixtures (sautees en LIVE_ONLY) =================
 
 # --- 1. Healthcheck ---
 echo "--- healthcheck ---"
@@ -214,31 +249,6 @@ ok "rescan J+30 : page 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/res
 has "rescan J+30 : pas encore eligible (J+30)" "$(curl -s "$BASE/rescan/$RESCAN_TOK")" "disponible"
 ok "rescan inconnu -> 404" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rescan/token-inconnu-xxxxxxxx")" "404"
 
-# --- 5a-bis. ANTI-TROU (recette t_72143dd9) : gel du texte rendu, aucune
-# phrase du rapport ne doit contenir de trou (variable non injectee).
-noholes() { # $1 = fichier HTML du rapport gelé
-  python3 - "$1" <<'PYEOF'
-import html, re, sys
-raw = open(sys.argv[1], encoding="utf-8").read()
-bad = []
-if re.search(r"\{\{|\{%", raw): bad.append("gabarit Jinja non rendu")
-if re.search(r"<strong>\s*</strong>", raw): bad.append("<strong> vide")
-if re.search(r">\s*None\s*<", raw): bad.append("'None' injecte")
-t = re.sub(r"<script.*?</script>", " ", raw, flags=re.S)
-t = re.sub(r"<style.*?</style>", " ", t, flags=re.S)
-t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
-if re.search(r"\S  +[,:.;!?]", t): bad.append("double espace avant ponctuation")
-# Phrases de GABARIT uniquement (t_74e5bb97) : un verbatim IA peut contenir
-# « à partir du 1er septembre » en prose legitime — ce n'est PAS un trou.
-for m in re.finditer(r"(actif à partir du|disponible à partir du|becomes active on|available from)\s*\n?\s*([^\n<]*)", t):
-    if not re.match(r"(\d{4}-\d{2}-\d{2}|J\+30|day 30)", m.group(2).strip()):
-        bad.append("date re-scan absente apres: " + m.group(1))
-for m in re.finditer(r"(Nous avons posé|We asked)([^\n]*\n?[^\n]*)", t):
-    if not re.search(r"\d+", m.group(0)):
-        bad.append("compteurs verbatims absents")
-print("TROU:" + "; ".join(bad) if bad else "OK")
-PYEOF
-}
 ok "rapport FR : aucun trou (texte gele)" "$(noholes /tmp/t_rep_fr.html)" "OK"
 ok "rapport FR : date re-scan J+30 injectee" \
   "$(printf '%s' "$HFR" | tr '\n' ' ' | grep -qE 'à partir du\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
@@ -397,20 +407,25 @@ has "api report multi : token + rescan" "$RMULTI" "url_rescan"
 # Recette t_ffc46988 : le rapport sur brozapi.com (studio de LOGICIELS) ne doit
 # citer AUCUN site de bricolage/outillage et le secteur affiche doit etre la
 # formulation precise validee par le garde-fou Sonar. SKIP_LIVE=1 pour sauter.
+fi  # fin LIVE_ONLY guard (sections fixtures)
 echo "--- non-regression secteur brozapi.com (pipeline reel) ---"
 if [ "${SKIP_LIVE:-0}" = "1" ]; then
   echo "SKIP tests live (SKIP_LIVE=1)"
 else
   # Les 2 audits live (FR + EN) tournent EN PARALLELE (t_a857e039) : le pipeline
-  # niveau 2 dure ~5-6 min par audit, sequentiel on depassait le timeout 570s
-  # de la porte SSH. Le compteur de cout est isole par audit (contextvar).
+  # niveau 2 dure ~7 min par audit en multi-moteurs, sequentiel on depassait le
+  # timeout 570s de la porte SSH. Le compteur de cout est isole par audit
+  # (contextvar). L'EN est decale de 20 s (t_74e5bb97) : 2 audits x 4 moteurs
+  # lances en rafale simultanee declenchaient des 429 en cascade (audit EN
+  # incomplete > timeout curl 540 s constate en recette).
   # Sans parametre engines, l'API lance tous les moteurs dont la cle est
   # presente : les controles live ci-dessous visent le rendu MULTI-MOTEURS
   # par defaut (t_74e5bb97). Le rendu mono legacy reste couvert par fixtures.
-  echo ">>> lancement des 2 audits live FR+EN en parallele (~6 min, ~0,25 $ total)"
+  echo ">>> lancement des 2 audits live FR+EN en parallele (~7-9 min, ~1,30 $ total)"
   curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
     -d '{"url":"https://brozapi.com","lang":"fr"}' "$BASE/api/report" > /tmp/t_rreal.json &
   PID_FR=$!
+  sleep 20
   curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
     -d '{"url":"https://brozapi.com","lang":"en"}' "$BASE/api/report" > /tmp/t_renl.json &
   PID_EN=$!
@@ -435,7 +450,10 @@ else
   # requete x moteur + ecarts (t_9864864c / t_74e5bb97)
   has "reel FR : colonne Requete testee" "$HREAL" "Requête testée"
   has "reel FR : matrice visibilite par moteur" "$HREAL" "Visibilité par moteur d'IA"
-  has "reel FR : cellules cite oui/non" "$HREAL" "✓ oui"
+  # brozapi.com peut etre cite 0/60 legitime : on verifie le RENDU des
+  # cellules (oui ou non), pas un resultat de citation particulier.
+  ok "reel FR : cellules cite oui/non rendues" \
+    "$(printf '%s' "$HREAL" | grep -qE '✓ oui|✗ non' && echo oui)" "oui"
   has "reel FR : ecarts entre moteurs" "$HREAL" "Écarts entre moteurs"
   hasnot "reel FR : pas de markdown brut (pipes)" "$HREAL" "| ---"
   hasnot "reel FR : pas de compteur de mots" "$HREAL" "mots extractibles"
