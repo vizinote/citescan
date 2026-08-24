@@ -50,18 +50,28 @@ check("hub blog FR", 'lang="fr"' in r.text)
 r = client.get("/secteurs/")
 check("hub secteurs 200", r.status_code == 200)
 check("hub secteurs FR", 'lang="fr"' in r.text)
-for slug in ("restaurant", "avocat"):
+SECTOR_SLUGS = (
+    "restaurant", "avocat",
+    # t_8ca3cb5f — 23 pages sectorielles (lots 1-4)
+    "artisan", "e-commerce", "agence-immobiliere", "freelance", "coach-consultant", "hotel",
+    "medecin-sante", "dentiste", "veterinaire", "salle-de-sport", "coiffeur-beaute", "garage-automobile",
+    "expert-comptable", "notaire", "architecte", "courtier-assurance", "agence-web", "photographe",
+    "commerce-local", "plombier-chauffagiste", "electricien", "association", "mairie-collectivite",
+)
+for slug in SECTOR_SLUGS:
     r = client.get(f"/secteurs/{slug}.html")
     check(f"page secteur {slug} 200", r.status_code == 200)
     check(f"page secteur {slug} canonical",
           f"https://citescan.brozapi.com/secteurs/{slug}.html" in r.text)
-    check(f"page secteur {slug} CTA scan", "/fr/" in r.text)
+    check(f"page secteur {slug} CTA scan", 'class="cta-block"' in r.text and 'href="/fr/"' in r.text)
+    check(f"page secteur {slug} encart honnetete", 'class="box"' in r.text and "Honnêteté" in r.text)
     check(f"page secteur {slug} footer croise", "badgeia.brozapi.com" in r.text
           and "accessicheck.brozapi.com" in r.text)
+    check(f"page secteur {slug} JSON-LD Article", '"@type":"Article"' in r.text)
 r = client.get("/sitemap.xml")
 check("sitemap liste hub secteurs", "https://citescan.brozapi.com/secteurs/" in r.text)
-check("sitemap liste pages secteurs", "/secteurs/restaurant.html" in r.text
-      and "/secteurs/avocat.html" in r.text)
+missing = [s for s in SECTOR_SLUGS if f"/secteurs/{s}.html" not in r.text]
+check("sitemap liste les 25 pages secteurs", not missing, f"manquants: {missing}")
 # Securite : pas de traversee de chemin, gabarit non public, index non reservi
 r = client.get("/secteurs/..%2F..%2Fapp%2Fmain.py")
 check("secteurs pas de path traversal", r.status_code in (400, 404))
