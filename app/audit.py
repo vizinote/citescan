@@ -2,7 +2,8 @@
 
 Pipeline:
  1) deep technical audit (robots AI bots, extractability, JSON-LD, E-E-A-T) — 100% local, free
- 2) 15 buyer-intent queries to Perplexity Sonar (~$0.15/audit) — citation detection
+ 2) 15 buyer-intent queries to Perplexity Agent API (model perplexity/sonar +
+    web_search, ~$0.08/audit mesuré) — citation detection
  3) scoring + prioritized action plan (FR/EN)
 
 Degraded mode without PERPLEXITY_API_KEY: technical audit only, citation section
@@ -19,8 +20,13 @@ import httpx
 from bs4 import BeautifulSoup
 
 PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "").strip()
-PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
-PERPLEXITY_MODEL = "sonar"
+# Migration 2026-08-24 (t_b4b6a798) : Sonar Chat Completions est coupé le
+# 27/09/2026 -> Agent API (POST /v1/agent). Le modèle perplexity/sonar reste
+# le moteur, avec grounding web explicite via l'outil web_search (indispensable :
+# on mesure les CITATIONS). Coût mesuré en smoke test : ~0,005 $/requête
+# (soit ~0,08 $/audit de 15 requêtes + garde-fou), sous le seuil de 0,30 $.
+PERPLEXITY_AGENT_URL = "https://api.perplexity.ai/v1/agent"
+PERPLEXITY_AGENT_MODEL = "perplexity/sonar"
 N_QUERIES = 15
 
 # Rédaction du rapport client : V4 pro via OpenRouter (exigence Franck 2026-08-24).
@@ -318,37 +324,108 @@ _SONAR_SYSTEM = {
 }
 
 
-async def _sonar_query(client: httpx.AsyncClient, query: str, retries: int = 3,
+async def _agent_query(client: httpx.AsyncClient, query: str, retries: int = 3,
                        lang: str = "en") -> dict:
-    """One Perplexity Sonar call with 429 retry/backoff."""
+    """One Perplexity Agent API call (model perplexity/sonar + web_search) with
+    429 retry/backoff (Retry-After honored). Citations = union of the URLs
+    cited in the answer annotations and the retrieved search_results sources —
+    the answer text itself is not used by the audit pipeline.
+    Note: structured output (JSON schema) was evaluated and intentionally NOT
+    applied here — citation extraction reads verifiable URLs from
+    annotations/search_results, never model-generated text, so a schema would
+    only add failure modes without changing the client-facing output."""
     system = _SONAR_SYSTEM.get(lang, _SONAR_SYSTEM["en"])
     delay = 8.0
     for attempt in range(retries + 1):
         try:
-            r = await client.post(PERPLEXITY_URL, json={
-                "model": PERPLEXITY_MODEL,
-                "messages": [{"role": "system", "content": system},
-                             {"role": "user", "content": query}],
-                "search_context_size": "low",
-                "return_citations": True,
+            r = await client.post(PERPLEXITY_AGENT_URL, json={
+                "model": PERPLEXITY_AGENT_MODEL,
+                "input": query,
+                "instructions": system,
+                "language_preference": lang,
+                "tools": [{"type": "web_search"}],
+                "max_output_tokens": 1024,
             }, headers={"Authorization": f"Bearer {PERPLEXITY_API_KEY}",
                         "Content-Type": "application/json"})
             if r.status_code == 429 and attempt < retries:
-                await asyncio.sleep(delay)
+                retry_after = r.headers.get("Retry-After")
+                wait = delay
+                if retry_after:
+                    try:
+                        wait = max(wait, float(retry_after))
+                    except ValueError:
+                        pass
+                await asyncio.sleep(wait)
                 delay *= 2
                 continue
             if r.status_code != 200:
                 return {"query": query, "ok": False, "citations": [],
-                        "error": f"HTTP {r.status_code}"}
+                        "cost": 0.0, "error": f"HTTP {r.status_code}"}
             data = r.json()
-            return {"query": query, "ok": True, "citations": data.get("citations", []) or [],
-                    "error": None}
+            urls = []
+            for item in data.get("output", []) or []:
+                itype = item.get("type")
+                if itype == "search_results":
+                    urls += [x.get("url") for x in item.get("results", []) or []
+                             if x.get("url")]
+                elif itype == "message":
+                    for part in item.get("content", []) or []:
+                        for ann in part.get("annotations", []) or []:
+                            if ann.get("url"):
+                                urls.append(ann["url"])
+            cost = ((data.get("usage") or {}).get("cost") or {}).get("total_cost") or 0.0
+            return {"query": query, "ok": True,
+                    "citations": list(dict.fromkeys(urls)),
+                    "cost": float(cost), "error": None}
         except Exception as e:
             if attempt < retries:
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
-            return {"query": query, "ok": False, "citations": [], "error": str(e)[:200]}
+            return {"query": query, "ok": False, "citations": [],
+                    "cost": 0.0, "error": str(e)[:200]}
+
+
+# ---------------------------------------------------------------------------
+# FALLBACK Sonar Chat Completions — CONSERVÉ jusqu'au 27/09/2026 au cas où
+# (ancien pipeline, coupé par Perplexity après cette date). Pour réactiver en
+# urgence : renommer _sonar_query_legacy -> _agent_query ne suffit PAS (forme
+# de réponse différente) ; décommenter ce bloc et le renommer _agent_query.
+#
+# PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
+# PERPLEXITY_MODEL = "sonar"
+#
+# async def _sonar_query_legacy(client, query, retries=3, lang="en"):
+#     system = _SONAR_SYSTEM.get(lang, _SONAR_SYSTEM["en"])
+#     delay = 8.0
+#     for attempt in range(retries + 1):
+#         try:
+#             r = await client.post(PERPLEXITY_URL, json={
+#                 "model": PERPLEXITY_MODEL,
+#                 "messages": [{"role": "system", "content": system},
+#                              {"role": "user", "content": query}],
+#                 "search_context_size": "low",
+#                 "return_citations": True,
+#             }, headers={"Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+#                         "Content-Type": "application/json"})
+#             if r.status_code == 429 and attempt < retries:
+#                 await asyncio.sleep(delay)
+#                 delay *= 2
+#                 continue
+#             if r.status_code != 200:
+#                 return {"query": query, "ok": False, "citations": [],
+#                         "cost": 0.0, "error": f"HTTP {r.status_code}"}
+#             data = r.json()
+#             return {"query": query, "ok": True,
+#                     "citations": data.get("citations", []) or [],
+#                     "cost": 0.0, "error": None}
+#         except Exception as e:
+#             if attempt < retries:
+#                 await asyncio.sleep(delay)
+#                 delay *= 2
+#                 continue
+#             return {"query": query, "ok": False, "citations": [],
+#                     "cost": 0.0, "error": str(e)[:200]}
 
 
 def _host_of(url: str) -> str:
@@ -371,12 +448,12 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     queries = build_queries(keyword, lang)
     target = _host_of(domain)
     timeout = httpx.Timeout(45.0)
-    # sequential calls (small pause) to stay under Sonar RPM limits; gather() fired
-    # 15 concurrent requests and reliably triggered HTTP 429 on 10+ queries.
+    # sequential calls (small pause) to stay under Perplexity RPM limits;
+    # gather() fired 15 concurrent requests and reliably triggered HTTP 429.
     results = []
     async with httpx.AsyncClient(timeout=timeout) as client:
         for q in queries:
-            results.append(await _sonar_query(client, q, lang=lang))
+            results.append(await _agent_query(client, q, lang=lang))
             await asyncio.sleep(1.5)
 
     per_query = []
@@ -402,9 +479,11 @@ async def citation_audit(domain: str, keyword: str, lang: str) -> dict:
     competitors = [{"domain": d, "count": c} for d, c in
                    sorted(comp_counter.items(), key=lambda x: -x[1])][:10]
     status = "ok" if ok_count == len(queries) else ("partial" if ok_count else "failed")
+    cost_usd = round(sum(r.get("cost", 0.0) for r in results), 5)
     return {"status": status, "queries_ok": ok_count, "total": len(queries),
             "cited_count": cited_count, "queries": per_query,
-            "competitors": competitors}
+            "competitors": competitors, "cost_usd": cost_usd,
+            "engine": "agent-api:perplexity/sonar"}
 
 
 # ---------------------------------------------------------------- sector detection (V4 pro + Sonar guardrail)
@@ -605,7 +684,7 @@ async def validate_sector(sector: str, domain: str, signals: dict, lang: str) ->
     query = _SECTOR_VALIDATION_QUERY[lang].format(sector=sector)
     timeout = httpx.Timeout(45.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        res = await _sonar_query(client, query, lang=lang)
+        res = await _agent_query(client, query, lang=lang)
     if not res["ok"]:
         return result
     hosts = sorted({h for h in (_host_of(c) for c in res["citations"]) if h})[:12]

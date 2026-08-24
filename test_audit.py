@@ -175,5 +175,81 @@ check("run_paid_audit injoignable: secteur explicite",
       r["sector"]["method"] == "no-page-content" and r["keyword"], str(r.get("sector")))
 audit.OPENROUTER_API_KEY, audit.PERPLEXITY_API_KEY = _old_or, _old_px
 
+# --- Agent API pipeline (t_b4b6a798) : parsing réponse /v1/agent ---
+class _FakeResp:
+    def __init__(self, status, payload=None, headers=None):
+        self.status_code = status
+        self._payload = payload or {}
+        self.headers = headers or {}
+    def json(self):
+        return self._payload
+
+class _FakeClient:
+    """Séquence de réponses + capture du dernier body envoyé."""
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.sent = []
+    async def post(self, url, json=None, headers=None):
+        self.sent.append({"url": url, "json": json, "headers": headers})
+        return self.responses.pop(0)
+
+_AGENT_OK = {
+    "status": "completed", "model": "perplexity/sonar",
+    "output": [
+        {"type": "search_results", "queries": ["q1"],
+         "results": [{"url": "https://a.fr/x", "title": "A"},
+                     {"url": "https://b.fr/y", "title": "B"}]},
+        {"type": "message", "role": "assistant", "status": "completed",
+         "content": [{"type": "output_text", "text": "Réponse [web:1]",
+                      "annotations": [{"url": "https://b.fr/y"},
+                                      {"url": "https://c.fr/z"}]}]},
+    ],
+    "usage": {"cost": {"total_cost": 0.00478}},
+}
+
+_fc = _FakeClient([_FakeResp(200, _AGENT_OK)])
+audit.PERPLEXITY_API_KEY = "test-key"
+res = asyncio.run(audit._agent_query(_fc, "ma requête", lang="fr"))
+check("agent-api: ok", res["ok"] is True and res["error"] is None)
+check("agent-api: citations = union annotations+search_results, dédupliquées",
+      res["citations"] == ["https://a.fr/x", "https://b.fr/y", "https://c.fr/z"],
+      str(res["citations"]))
+check("agent-api: coût remonté", abs(res["cost"] - 0.00478) < 1e-9)
+_sent = _fc.sent[0]
+check("agent-api: endpoint /v1/agent", _sent["url"] == audit.PERPLEXITY_AGENT_URL)
+check("agent-api: modèle perplexity/sonar",
+      _sent["json"]["model"] == "perplexity/sonar")
+check("agent-api: grounding web_search activé",
+      _sent["json"]["tools"] == [{"type": "web_search"}])
+check("agent-api: langue du parcours propagée",
+      _sent["json"]["language_preference"] == "fr" and
+      "français" in _sent["json"]["instructions"])
+check("agent-api: auth bearer",
+      _sent["headers"]["Authorization"] == "Bearer test-key")
+
+_fc_err = _FakeClient([_FakeResp(500)])
+res_err = asyncio.run(audit._agent_query(_fc_err, "q", retries=0))
+check("agent-api: HTTP 500 -> échec explicite",
+      res_err["ok"] is False and res_err["citations"] == [] and
+      "500" in res_err["error"])
+
+# 429 : retry en honorant Retry-After (sleep neutralisé pour le test)
+_sleeps = []
+async def _fake_sleep(s):
+    _sleeps.append(s)
+_orig_sleep = audit.asyncio.sleep
+audit.asyncio.sleep = _fake_sleep
+try:
+    _fc_429 = _FakeClient([_FakeResp(429, headers={"Retry-After": "12"}),
+                           _FakeResp(200, _AGENT_OK)])
+    res_429 = asyncio.run(audit._agent_query(_fc_429, "q", retries=1))
+    check("agent-api: 429 retried puis succès",
+          res_429["ok"] is True and len(_fc_429.sent) == 2)
+    check("agent-api: Retry-After honoré", _sleeps and _sleeps[0] >= 12.0,
+          str(_sleeps))
+finally:
+    audit.asyncio.sleep = _orig_sleep
+audit.PERPLEXITY_API_KEY = ""
+
 print(f"\nUNIT: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)
