@@ -77,29 +77,10 @@
             <li><strong>Garantie 7 jours</strong> — remboursement intégral, sans justification</li>
           </ul>
 
-          <div class="cta-disabled-notice">
-            <strong>⚠ Paiement en cours d'activation.</strong>
-            Le bouton de commande sera activé dès validation par l'éditeur.
-            Ceci est un site en cours de lancement — aucune charge ne sera faite avant activation explicite.
-          </div>
-
-          <!-- ═══════════════════════════════════════════════════════
-               VERROU FRANCK (n°3) — Remplacer le bloc ci-dessous par les
-               Stripe Payment Links UNIQUEMENT après validation explicite.
-               Les 3 liens (29/39/49 €) sont générés via
-               stripe/create-payment-link.py.
-               ═══════════════════════════════════════════════════════ -->
-          <button class="btn btn--disabled btn--block" disabled aria-describedby="locked-cta" id="order-btn">
-            Commander — 29&nbsp;€
-          </button>
-          <p id="locked-cta" style="font-size:.85rem; color:var(--citescan-muted); text-align:center; margin-top:.4rem;">
-            Activation planifiée — verrou éditorial Brozapi.
-          </p>
-          <!--
-          À DÉCOMMENTER après validation Franck et création des 3 Payment Links :
-          formulaire domaine → Stripe. Le client_reference_id transporte
-          "<domaine>|<langue>|<moteurs csv>" : c'est ce qui déclenche l'audit du
-          bon site avec les bonnes IA (le poller borne les moteurs au palier payé).
+          <!-- Paiement activé (GO Franck 2026-08-24) : formulaire domaine → Stripe.
+               Le client_reference_id transporte "<domaine>|<langue>|<moteurs csv>" :
+               c'est ce qui déclenche l'audit du bon site avec les bonnes IA
+               (le poller borne les moteurs au palier payé). -->
           <form id="order-form" onsubmit="return citescanCheckout(event, 'fr')">
             <label for="order-domain" style="display:block;margin-bottom:.4rem;font-weight:600;">
               Votre site à auditer
@@ -109,7 +90,7 @@
             <button type="submit" class="btn btn--primary btn--block" id="order-btn-live">Commander — 29&nbsp;€</button>
           </form>
           <script>
-          // Un Payment Link par palier (créés via stripe/create-payment-link.py)
+          // Un Payment Link par palier (29/39/49 €, actifs depuis le 2026-08-24)
           const STRIPE_PAYMENT_LINKS = {
             29: "https://buy.stripe.com/aFa7sF3gB90F7tN33fcZa09",
             39: "https://buy.stripe.com/9B69AN6sN3Gl4hBbzLcZa0a",
@@ -126,7 +107,6 @@
             return false;
           }
           </script>
-          -->
         </div>
       </div>
 

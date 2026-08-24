@@ -77,29 +77,10 @@
             <li><strong>7-day guarantee</strong> — full refund, no questions asked</li>
           </ul>
 
-          <div class="cta-disabled-notice">
-            <strong>⚠ Payment is being activated.</strong>
-            The order button goes live after explicit owner validation.
-            This site is pre-launch — no charge will occur before explicit activation.
-          </div>
-
-          <!-- ═══════════════════════════════════════════════════════
-               FRANCK LOCK (#3) — Replace this block with the Stripe
-               Payment Links ONLY after explicit validation.
-               The 3 links (€29/39/49) are generated via
-               stripe/create-payment-link.py.
-               ═══════════════════════════════════════════════════════ -->
-          <button class="btn btn--disabled btn--block" disabled aria-describedby="locked-cta-en" id="order-btn">
-            Order — €29
-          </button>
-          <p id="locked-cta-en" style="font-size:.85rem; color:var(--citescan-muted); text-align:center; margin-top:.4rem;">
-            Pending editorial activation — Brozapi launch lock.
-          </p>
-          <!--
-          UNCOMMENT after Franck's validation and creation of the 3 Payment Links:
-          domain form → Stripe. client_reference_id carries
-          "<domain>|<lang>|<engines csv>": it tells the delivery poller which site
-          to audit with which AIs (the poller clamps engines to the paid tier).
+          <!-- Payment activated (owner GO 2026-08-24): domain form → Stripe.
+               client_reference_id carries "<domain>|<lang>|<engines csv>": it tells
+               the delivery poller which site to audit with which AIs (the poller
+               clamps engines to the paid tier). -->
           <form id="order-form" onsubmit="return citescanCheckout(event, 'en')">
             <label for="order-domain" style="display:block;margin-bottom:.4rem;font-weight:600;">
               Your website to audit
@@ -109,7 +90,7 @@
             <button type="submit" class="btn btn--primary btn--block" id="order-btn-live">Order — €29</button>
           </form>
           <script>
-          // One Payment Link per tier (created via stripe/create-payment-link.py)
+          // One Payment Link per tier (€29/39/49, active since 2026-08-24)
           const STRIPE_PAYMENT_LINKS = {
             29: "https://buy.stripe.com/aFa7sF3gB90F7tN33fcZa09",
             39: "https://buy.stripe.com/9B69AN6sN3Gl4hBbzLcZa0a",
@@ -126,7 +107,6 @@
             return false;
           }
           </script>
-          -->
         </div>
       </div>
 

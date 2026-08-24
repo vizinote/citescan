@@ -307,12 +307,18 @@ has "offre FR : extras chatgpt+claude" "$OFFR" 'class="eng-extra" value="chatgpt
 has "offre FR : extra claude" "$OFFR" 'class="eng-extra" value="claude"'
 has "offre FR : grille JS 29/39/49" "$OFFR" 'PRICE_LADDER = {0: 29, 1: 39, 2: 49}'
 has "offre FR : prix dynamique id" "$OFFR" 'id="offer-price"'
-has "offre FR : CTA verrouille" "$OFFR" 'btn--disabled'
-# Liens Stripe ACTIVES le 2026-08-24 18:40 UTC (GO Franck, t_6808ea76) :
-# l'ancien verrou « aucun lien actif » est inverse en anti-regression.
+# CTA DEVERROUILLE le 2026-08-24 (GO Franck, t_b0ca2cc3) : formulaire actif,
+# plus de btn--disabled ni notice. Liens Stripe ACTIVES le 2026-08-24 18:40 UTC
+# (GO Franck, t_6808ea76) : presence verifiee dans la partie visible.
+ok "offre FR : CTA deverrouille (0 btn--disabled)" "$(printf '%s' "$OFFR" | grep -c 'btn--disabled')" "0"
+ok "offre FR : notice verrou supprimee" "$(printf '%s' "$OFFR" | grep -c 'cta-disabled-notice')" "0"
+has "offre FR : formulaire de commande actif" "$OFFR" 'id="order-form"'
+has "offre FR : bouton live" "$OFFR" 'id="order-btn-live"'
 has "offre FR : liens Stripe actifs (GO Franck)" "$OFFR" 'buy.stripe.com'
 has "offre EN : selecteur present" "$OFFEN" 'id="engine-select"'
 has "offre EN : grille JS" "$OFFEN" 'PRICE_LADDER'
+ok "offre EN : CTA deverrouille (0 btn--disabled)" "$(printf '%s' "$OFFEN" | grep -c 'btn--disabled')" "0"
+has "offre EN : formulaire de commande actif" "$OFFEN" 'id="order-form"'
 has "offre EN : liens Stripe actifs (GO Franck)" "$OFFEN" 'buy.stripe.com'
 ok "style.css sert engine-select" "$(curl -s "$BASE/assets/style.css" | grep -c 'engine-select')" "6"
 
