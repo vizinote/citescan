@@ -262,6 +262,10 @@ check("verbatim: 2 phrases max, markdown/nettoyé",
 v2 = audit._verbatim("mot " * 200)
 check("verbatim: cap 300 chars + ellipse", len(v2) <= 301 and v2.endswith("…"))
 check("verbatim: vide -> ''", audit._verbatim("") == "" and audit._verbatim(None) == "")
+v3 = audit._verbatim("Voici un comparatif rapide. ### Tableau | Solution | Prix | |---|---|---| "
+                     "| A | 29 € | | B | 49 € |")
+check("verbatim: markdown tableau/headers nettoyé",
+      "|" not in v3 and "#" not in v3 and "---" not in v3, v3)
 
 # CMS detection
 cms_wp = audit.detect_cms('<html><head></head><body><link href="/wp-content/themes/x/style.css"></body></html>', "fr")

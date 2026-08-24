@@ -443,10 +443,14 @@ def _host_of(url: str) -> str:
 
 def _verbatim(text: str, max_chars: int = 300) -> str:
     """First 1-2 real sentences of an AI answer, capped — the client sees what
-    the AI literally says (rapport niveau 2). Strips markdown noise/citation
-    brackets so the quote reads cleanly."""
+    the AI literally says (rapport niveau 2). Strips markdown noise (citation
+    brackets, bold, headers, table rows, HR) so the quote reads cleanly."""
     t = re.sub(r"\[\d+\]", "", text or "")          # [1]-style citation markers
     t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)        # **bold**
+    t = re.sub(r"#{1,6}\s*", "", t)                 # ### markdown headers
+    t = re.sub(r"\|[\s\-:]+\|", " ", t)             # |---|---| table separators
+    t = re.sub(r"\|", " · ", t)                     # remaining table pipes -> middle dot
+    t = re.sub(r"-{3,}", " ", t)                    # --- horizontal rules
     t = re.sub(r"\s+", " ", t).strip()
     if not t:
         return ""
