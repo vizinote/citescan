@@ -83,7 +83,7 @@ sys.modules["stripe"] = fake_stripe
 spec = importlib.util.spec_from_file_location("cpl", SCRIPT)
 cpl = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cpl)
-cpl.STRIPE_ENV = stripe_env
+cpl.STRIPE_ENV_CANDIDATES = [stripe_env]
 cpl.LINKS_JSON = links_json
 
 fails = []

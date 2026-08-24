@@ -20,9 +20,11 @@ Grille validée par Franck (2026-08-24, t_9864864c) :
 Re-scan J+30 gratuit conservé sur tous les paliers (mêmes moteurs).
 
 Prérequis :
-  - Clé Stripe LIVE dans /root/stripe.env (host-only, jamais dans le repo)
+  - Clé Stripe LIVE : variable d'env STRIPE_* ou /opt/data/stripe.env
+    (jamais dans le repo)
     → FRANCK : créer une clé restreinte (rk_live_) avec permissions
-      Products/Prices/PaymentLinks en écriture, la déposer dans /root/stripe.env
+      Products/Prices/PaymentLinks en écriture, la déposer dans
+      /opt/data/stripe.env
   - python3 -m pip install stripe
 
 Usage :
@@ -44,7 +46,10 @@ import os
 import sys
 from pathlib import Path
 
-STRIPE_ENV = Path("/root/stripe.env")
+STRIPE_ENV_CANDIDATES = [
+    Path("/opt/data/stripe.env"),   # lisible par l'user hermes (agent)
+    Path("/root/stripe.env"),       # historique (root-only)
+]
 LINKS_JSON = Path("/opt/data/citescan-links.json")
 ACTIVATION_GATE = "OUI-FRANCK-A-VALIDE"
 CURRENCY = "eur"
@@ -97,16 +102,27 @@ TIERS = [
 
 
 def load_stripe_key() -> str:
-    """Charge la clé Stripe depuis /root/stripe.env (jamais depuis le repo).
-    Accepte STRIPE_SECRET_KEY / STRIPE_LIVE_KEY (sk_live_) ou
-    STRIPE_RESTRICTED_KEY (rk_live_)."""
-    if not STRIPE_ENV.exists():
-        sys.exit(f"❌ Fichier {STRIPE_ENV} introuvable. Clé Stripe LIVE requise.\n"
+    """Charge la clé Stripe, jamais depuis le repo. Ordre : variable
+    d'environnement (STRIPE_SECRET_KEY / STRIPE_LIVE_KEY /
+    STRIPE_RESTRICTED_KEY), puis /opt/data/stripe.env, puis
+    /root/stripe.env. Accepte sk_live_ ou rk_live_."""
+    candidates = list(STRIPE_ENV_CANDIDATES)
+    lines = []
+    for var in ("STRIPE_SECRET_KEY", "STRIPE_LIVE_KEY", "STRIPE_RESTRICTED_KEY"):
+        if os.environ.get(var):
+            lines.append(f"{var}={os.environ[var]}")
+    for path in candidates:
+        if path.exists():
+            lines.extend(path.read_text().splitlines())
+            break
+    if not lines:
+        sys.exit("❌ Aucune clé Stripe trouvée (env, /opt/data/stripe.env, "
+                 "/root/stripe.env). Clé Stripe LIVE requise.\n"
                  "   → Franck : dashboard Stripe → Développeurs → Clés API →\n"
                  "     créer une clé restreinte rk_live_ (Products, Prices,\n"
                  "     PaymentLinks en écriture) puis :\n"
-                 "     echo 'STRIPE_RESTRICTED_KEY=rk_live_...' > /root/stripe.env")
-    for line in STRIPE_ENV.read_text().splitlines():
+                 "     echo 'STRIPE_RESTRICTED_KEY=rk_live_...' > /opt/data/stripe.env")
+    for line in lines:
         line = line.strip()
         for var in ("STRIPE_SECRET_KEY", "STRIPE_LIVE_KEY", "STRIPE_RESTRICTED_KEY"):
             if line.startswith(var + "="):
@@ -115,7 +131,8 @@ def load_stripe_key() -> str:
                     sys.exit("❌ La clé trouvée n'est pas une clé LIVE "
                              "(sk_live_/rk_live_). Pas de clé test autorisée.")
                 return key
-    sys.exit(f"❌ Aucune variable Stripe utilisable dans {STRIPE_ENV}")
+    sys.exit("❌ Aucune variable Stripe utilisable "
+             f"dans {', '.join(str(p) for p in candidates)}")
 
 
 def load_links_file() -> dict:
