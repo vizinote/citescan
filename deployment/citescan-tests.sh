@@ -404,17 +404,15 @@ else
   # Les 2 audits live (FR + EN) tournent EN PARALLELE (t_a857e039) : le pipeline
   # niveau 2 dure ~5-6 min par audit, sequentiel on depassait le timeout 570s
   # de la porte SSH. Le compteur de cout est isole par audit (contextvar).
-  # t_7c78a520 : engines=["perplexity"] epingle — sans parametre, l'API lance
-  # TOUS les moteurs dont la cle est presente (rendu multi-moteurs) et les
-  # controles ci-dessous (tableau requetes mono-moteur, seuil cout 0,50 $
-  # Perplexity seul) ne visent que le rendu mono historique. Le rendu multi
-  # est couvert par les fixtures de la section 5.
+  # Sans parametre engines, l'API lance tous les moteurs dont la cle est
+  # presente : les controles live ci-dessous visent le rendu MULTI-MOTEURS
+  # par defaut (t_74e5bb97). Le rendu mono legacy reste couvert par fixtures.
   echo ">>> lancement des 2 audits live FR+EN en parallele (~6 min, ~0,25 $ total)"
   curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
-    -d '{"url":"https://brozapi.com","lang":"fr","engines":["perplexity"]}' "$BASE/api/report" > /tmp/t_rreal.json &
+    -d '{"url":"https://brozapi.com","lang":"fr"}' "$BASE/api/report" > /tmp/t_rreal.json &
   PID_FR=$!
   curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
-    -d '{"url":"https://brozapi.com","lang":"en","engines":["perplexity"]}' "$BASE/api/report" > /tmp/t_renl.json &
+    -d '{"url":"https://brozapi.com","lang":"en"}' "$BASE/api/report" > /tmp/t_renl.json &
   PID_EN=$!
   wait $PID_FR $PID_EN
   RREAL=$(cat /tmp/t_rreal.json)
