@@ -116,6 +116,49 @@ check("query_engine: timeout -> échec explicite borné",
 engines.ENGINES["chatgpt"]["query"] = _orig_q
 engines.ENGINE_TIMEOUT = _orig_to
 
+# ---------------------------------------------------------------- mock Perplexity (Agent API)
+# Adaptateur _perplexity_query de engines.py (parsing inline, distinct de
+# audit._agent_query) — réponse enregistrée, zéro réseau (t_97eee51e).
+
+_PERPLEXITY_OK = {
+    "status": "completed", "model": "perplexity/sonar",
+    "output": [
+        {"type": "search_results", "queries": ["q1"],
+         "results": [{"url": "https://a.fr/x", "title": "A"},
+                     {"url": "https://b.fr/y", "title": "B"}]},
+        {"type": "message", "role": "assistant", "status": "completed",
+         "content": [{"type": "output_text",
+                      "text": "Les outils cités sont A et C [web:1].",
+                      "annotations": [{"url": "https://b.fr/y"},
+                                      {"url": "https://c.fr/z"}]}]},
+    ],
+    "usage": {"cost": {"total_cost": 0.00478}},
+}
+_set_keys(PERPLEXITY_API_KEY="pplx-test")
+fc = _FakeClient([_FakeResp(200, _PERPLEXITY_OK)])
+r = asyncio.run(engines.query_engine("perplexity", fc, "ma requête", "fr"))
+check("perplexity: ok", r["ok"] is True and r["error"] is None)
+check("perplexity: citations = union search_results + annotations, dédupliquées",
+      r["citations"] == ["https://a.fr/x", "https://b.fr/y", "https://c.fr/z"],
+      str(r["citations"]))
+check("perplexity: answer text conservé (verbatim)",
+      "outils cités sont A et C" in r["answer"])
+_sent = fc.sent[0]
+check("perplexity: endpoint /v1/agent + modèle sonar + tool web_search",
+      _sent["url"] == engines.PERPLEXITY_AGENT_URL and
+      _sent["json"]["model"] == "perplexity/sonar" and
+      _sent["json"]["tools"] == [{"type": "web_search"}])
+check("perplexity: langue FR propagée", _sent["json"]["language_preference"] == "fr")
+check("perplexity: auth bearer",
+      _sent["headers"]["Authorization"] == "Bearer pplx-test")
+check("perplexity: coût remonté (usage.cost.total_cost)",
+      abs(r["cost"] - 0.00478) < 1e-9, str(r["cost"]))
+
+fc_err = _FakeClient([_FakeResp(500)])
+r = asyncio.run(engines.query_engine("perplexity", fc_err, "q", "fr"))
+check("perplexity: HTTP 500 -> échec explicite",
+      r["ok"] is False and r["citations"] == [] and "500" in r["error"])
+
 # ---------------------------------------------------------------- mock OpenAI (Responses API)
 
 _OPENAI_OK = {
