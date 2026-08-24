@@ -234,7 +234,7 @@ PYEOF
 }
 ok "rapport FR : aucun trou (texte gele)" "$(noholes /tmp/t_rep_fr.html)" "OK"
 ok "rapport FR : date re-scan J+30 injectee" \
-  "$(printf '%s' "$HFR" | grep -qE 'à partir du\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
+  "$(printf '%s' "$HFR" | tr '\n' ' ' | grep -qE 'à partir du\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
 ok "rapport FR : compteurs verbatims injectes" \
   "$(printf '%s' "$HFR" | grep -qE 'posé <strong>[0-9]+ questions' && echo oui)" "oui"
 
@@ -265,7 +265,7 @@ has "robots.txt : /rescan/ disallow" "$(curl -s "$BASE/robots.txt")" "Disallow: 
 printf '%s' "$HEN" > /tmp/t_rep_en.html
 ok "rapport EN : aucun trou (texte gele)" "$(noholes /tmp/t_rep_en.html)" "OK"
 ok "rapport EN : date re-scan J+30 injectee" \
-  "$(printf '%s' "$HEN" | grep -qE 'becomes active on\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
+  "$(printf '%s' "$HEN" | tr '\n' ' ' | grep -qE 'becomes active on\s*<strong>[0-9]{4}-[0-9]{2}-[0-9]{2}</strong>' && echo oui)" "oui"
 ok "rapport EN : compteurs verbatims injectes" \
   "$(printf '%s' "$HEN" | grep -qE 'We asked Perplexity <strong>[0-9]+ buyer-intent' && echo oui)" "oui"
 
