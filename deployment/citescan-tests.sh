@@ -181,6 +181,11 @@ has "rapport FR : CMS instruction (WPCode)" "$HFR" "WPCode"
 has "rapport FR : plateformes/annuaires" "$HFR" "Plateformes et annuaires"
 has "rapport FR : rescan J+30 affiche" "$HFR" "Mesurez vos progrès dans 30 jours"
 has "rapport FR : lien rescan" "$HFR" "/rescan/"
+# annexe vulgarisee (t_7c78a520) : encart de lecture + phrase simple par controle
+has "rapport FR : encart Comment lire cette annexe" "$HFR" "Comment lire cette annexe"
+has "rapport FR : phrase simple robots.txt" "$HFR" "autorise ou non les robots des IA"
+has "rapport FR : phrase simple JSON-LD" "$HFR" "une étiquette invisible"
+has "rapport FR : legende tableau bots" "$HFR" "autorisé » = il peut"
 # JSON-LD du rapport : extraction du bloc <pre class="code"> puis json.loads reel
 printf '%s' "$HFR" > /tmp/t_rep_fr.html
 JLOK=$(python3 - <<'PYEOF'
@@ -262,6 +267,11 @@ has "rapport EN : FAQ" "$HEN" "Your ready-to-publish FAQ"
 has "rapport EN : JSON-LD FAQPage" "$HEN" "FAQPage"
 has "rapport EN : CMS instruction (Custom Code)" "$HEN" "Custom Code"
 has "rapport EN : rescan J+30" "$HEN" "Measure your progress in 30 days"
+# annexe vulgarisee EN (t_7c78a520)
+has "rapport EN : how-to appendix box" "$HEN" "How to read this appendix"
+has "rapport EN : plain robots.txt sentence" "$HEN" "allows or blocks AI crawlers"
+has "rapport EN : plain JSON-LD sentence" "$HEN" "an invisible label"
+has "rapport EN : bots table legend" "$HEN" "it can read your site"
 has "robots.txt : /rescan/ disallow" "$(curl -s "$BASE/robots.txt")" "Disallow: /rescan/"
 
 printf '%s' "$HEN" > /tmp/t_rep_en.html
@@ -394,12 +404,17 @@ else
   # Les 2 audits live (FR + EN) tournent EN PARALLELE (t_a857e039) : le pipeline
   # niveau 2 dure ~5-6 min par audit, sequentiel on depassait le timeout 570s
   # de la porte SSH. Le compteur de cout est isole par audit (contextvar).
+  # t_7c78a520 : engines=["perplexity"] epingle — sans parametre, l'API lance
+  # TOUS les moteurs dont la cle est presente (rendu multi-moteurs) et les
+  # controles ci-dessous (tableau requetes mono-moteur, seuil cout 0,50 $
+  # Perplexity seul) ne visent que le rendu mono historique. Le rendu multi
+  # est couvert par les fixtures de la section 5.
   echo ">>> lancement des 2 audits live FR+EN en parallele (~6 min, ~0,25 $ total)"
   curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
-    -d '{"url":"https://brozapi.com","lang":"fr"}' "$BASE/api/report" > /tmp/t_rreal.json &
+    -d '{"url":"https://brozapi.com","lang":"fr","engines":["perplexity"]}' "$BASE/api/report" > /tmp/t_rreal.json &
   PID_FR=$!
   curl -s --max-time 540 -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
-    -d '{"url":"https://brozapi.com","lang":"en"}' "$BASE/api/report" > /tmp/t_renl.json &
+    -d '{"url":"https://brozapi.com","lang":"en","engines":["perplexity"]}' "$BASE/api/report" > /tmp/t_renl.json &
   PID_EN=$!
   wait $PID_FR $PID_EN
   RREAL=$(cat /tmp/t_rreal.json)
