@@ -516,6 +516,13 @@ class TestRenderMultiEngines(unittest.TestCase):
         self.assertIn("Perplexity cite le site en premier.", self.html)
         self.assertIn("Gemini privilégie les comparatifs.", self.html)
 
+    def test_no_source_cited_explicit_fr(self):
+        # D2 (t_148128db) : quand aucune source n'est extraite, la ligne
+        # « Cités à votre place » ne disparaît pas silencieusement — le client
+        # lit explicitement qu'aucune source n'a été citée.
+        self.assertIn("Aucune source citée dans cette réponse.", self.html)
+        self.assertIn("No source cited in this answer.", self.html_en)
+
     def test_unavailable_notice_fr(self):
         # claude en panne + chatgpt sans clé -> les deux mentionnés
         self.assertIn("indisponible(s) lors de", self.html)

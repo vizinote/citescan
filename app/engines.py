@@ -25,12 +25,56 @@ Grille tarifaire validée par Franck (2026-08-24) :
 """
 import asyncio
 import os
+from urllib.parse import urlparse
 
 import httpx
 
 # 60 s par appel moteur (garde-fou robustesse : un moteur lent ne fait
 # jamais échouer l'audit global).
 ENGINE_TIMEOUT = 60.0
+
+# Domaines d'infrastructure de redirection du grounding Gemini : les
+# groundingChunks renvoient des URL vertexaisearch.cloud.google.com/... qui
+# REDIRIGENT vers la vraie source. Ce ne sont JAMAIS des concurrents
+# (relecture t_148128db : ce domaine technique apparaissait en « concurrent
+# le plus cité » n°1 et dans les verbatims « cités à votre place »). On
+# résout la redirection vers la destination réelle ; si la résolution échoue,
+# l'URL est EXCLUE des citations.
+GROUNDING_REDIRECT_HOSTS = {
+    "vertexaisearch.cloud.google.com",
+    "vertexaisearch.googleapis.com",
+}
+
+
+def _host_of_url(url: str) -> str:
+    try:
+        h = urlparse(url).netloc.lower()
+        return h[4:] if h.startswith("www.") else h
+    except Exception:
+        return ""
+
+
+def _is_infra_url(url: str) -> bool:
+    return _host_of_url(url) in GROUNDING_REDIRECT_HOSTS
+
+
+async def _resolve_grounding_redirects(client: httpx.AsyncClient,
+                                       urls: list) -> list:
+    """Résout les URL de redirection du grounding vers leur destination réelle
+    (GET borné à 8 s, redirections suivies, en parallèle). Une URL non
+    résolue — ou pointant toujours vers un domaine d'infrastructure — est
+    exclue : jamais de domaine technique dans les résultats remis au client."""
+
+    async def _one(u):
+        try:
+            r = await client.get(u, follow_redirects=True, timeout=8.0)
+            final = str(r.url)
+            return None if _is_infra_url(final) else final
+        except Exception:
+            return None
+
+    resolved = await asyncio.gather(*(_one(u) for u in urls))
+    return [u for u in resolved if u]
 
 # Force la langue de réponse (recette 2026-08-24 : sans consigne explicite,
 # les moteurs répondent en anglais et polluent les rapports FR).
@@ -216,10 +260,19 @@ ANTHROPIC_VERSION = "2023-06-01"
 
 def _parse_anthropic(data: dict) -> dict:
     urls, answer_parts = [], []
-    for block in data.get("content", []) or []:
+    blocks = data.get("content", []) or []
+    # Préambule d'agent (relecture t_148128db) : Claude annonce sa recherche
+    # (« Je vais rechercher les meilleures solutions actuelles… ») dans un bloc
+    # texte AVANT le web_search_tool_result — ce raisonnement interne ne doit
+    # pas figurer dans le verbatim client : seul le texte postérieur à la
+    # dernière recherche web est conservé (sans recherche : tout le texte).
+    last_search = max((i for i, b in enumerate(blocks)
+                       if b.get("type") == "web_search_tool_result"),
+                      default=-1)
+    for i, block in enumerate(blocks):
         btype = block.get("type")
         if btype == "text":
-            if block.get("text"):
+            if i > last_search and block.get("text"):
                 answer_parts.append(block["text"])
             for cit in block.get("citations", []) or []:
                 if cit.get("url"):
@@ -339,6 +392,15 @@ async def _gemini_query(client: httpx.AsyncClient, prompt: str,
                 return {"ok": False, "answer": "", "citations": [], "cost": 0.0,
                         "error": f"HTTP {r.status_code}"}
             parsed = _parse_gemini(r.json())
+            # t_148128db : résoudre les URL de redirection du grounding vers
+            # la destination réelle AVANT de les compter comme citations
+            # (sinon vertexaisearch.cloud.google.com est « concurrent n°1 »).
+            infra = [u for u in parsed["citations"] if _is_infra_url(u)]
+            if infra:
+                resolved = await _resolve_grounding_redirects(client, infra)
+                parsed["citations"] = list(dict.fromkeys(
+                    [u for u in parsed["citations"] if not _is_infra_url(u)]
+                    + resolved))
             parsed.update({"ok": True, "error": None})
             return parsed
         except Exception as e:
@@ -477,8 +539,14 @@ async def query_engine(name: str, client: httpx.AsyncClient, prompt: str,
         return {"ok": False, "answer": "", "citations": [], "cost": 0.0,
                 "error": f"clé {spec['env_key']} absente"}
     try:
-        return await asyncio.wait_for(
+        res = await asyncio.wait_for(
             spec["query"](client, prompt, lang), timeout=ENGINE_TIMEOUT)
+        # Défense en profondeur (t_148128db) : un domaine d'infrastructure de
+        # redirection (grounding Gemini) ne doit JAMAIS apparaître dans les
+        # citations, quel que soit le moteur qui l'a émis.
+        res["citations"] = [u for u in res.get("citations", [])
+                            if not _is_infra_url(u)]
+        return res
     except asyncio.TimeoutError:
         return {"ok": False, "answer": "", "citations": [], "cost": 0.0,
                 "error": f"timeout {ENGINE_TIMEOUT:.0f}s"}

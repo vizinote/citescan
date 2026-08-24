@@ -397,6 +397,8 @@ has "multi : verbatim gemini" "$HM" "Gemini privilégie les comparatifs locaux."
 has "multi : moteur en panne mentionne" "$HM" "Claude était indisponible lors de l'audit"
 has "multi : moteur sans cle mentionne" "$HM" "ChatGPT"
 has "multi : mesures requete x moteur" "$HM" "mesures requête × moteur"
+# t_148128db : ligne explicite quand aucune source n'est extraite (D2)
+has "multi : aucune source citee explicite" "$HM" "Aucune source citée dans cette réponse."
 ok "rapport multi : aucun trou (texte gele)" "$(noholes /tmp/t_rep_multi.html)" "OK"
 PDFM=$(curl -s -o /tmp/t_rep_multi.pdf -w "%{http_code}" "$BASE/rapports/$TOKM/pdf")
 ok "rapport multi : PDF -> 200" "$PDFM" "200"
@@ -466,6 +468,11 @@ else
   has "reel FR : JSON-LD FAQPage" "$HREAL" "FAQPage"
   has "reel FR : 3 contenus titre+angle" "$HREAL" "titres et angles fournis"
   has "reel FR : lien rescan J+30" "$HREAL" "/rescan/"
+  # t_148128db (exactitude) : jamais de domaine d'infrastructure de grounding
+  # Gemini dans le rapport (classement concurrents + verbatims), jamais de
+  # preambule d'agent Claude dans les verbatims.
+  hasnot "reel FR : vertexaisearch absent du rapport" "$HREAL" "vertexaisearch"
+  hasnot "reel FR : pas de preambule agent Claude" "$HREAL" "Je vais rechercher"
   # garde-fou budget multi-moteurs : alerte si audit > 1 USD (t_9864864c) ;
   # le seuil legacy 0,50 USD visait Perplexity seul.
   COST=$(printf '%s' "$RREAL" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("cost_usd"))' 2>/dev/null)

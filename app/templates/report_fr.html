@@ -86,8 +86,13 @@
   @media print {
     body { background: #fff; }
     header.band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    h2 { page-break-after: avoid; }
-    .check, .action, .phase, .deliv, .verbatim, table { page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
+    /* Relecture t_148128db (C2/C3/C4) : un tableau ou une carte haute ne doit
+       ni être repoussé à la page suivante en laissant un grand blanc, ni être
+       coupé au milieu d'une ligne. On autorise la coupure entre les lignes/
+      sections, jamais à l'intérieur d'une ligne ou d'une petite carte. */
+    tr, .action, .phase, .deliv, .verbatim { page-break-inside: avoid; }
+    table, .check { page-break-inside: auto; }
   }
 </style>
 </head>
@@ -176,7 +181,7 @@
   qui vous feront rattraper l'écart — chacun avec son titre exact et son angle.</p>
   {% for a in actions_contenu %}
   <div class="deliv">
-    <h3>📝 « {{ a.titre }} »</h3>
+    <h3>« {{ a.titre }} »</h3>
     <p><strong>Angle :</strong> {{ a.angle }}</p>
   </div>
   {% endfor %}
@@ -278,7 +283,7 @@
     {% if q.verbatim %}<blockquote>« {{ q.verbatim }} »</blockquote>{% endif %}
     <p>{% if q.cited %}<span class="cited-yes">✓ Votre site est cité dans cette réponse.</span>
     {% else %}<span class="cited-no">✗ Votre site n'est pas cité.</span>{% endif %}
-    {% if q.citations %}<br>Cités à votre place : {{ q.citations | join(", ") }}{% endif %}</p>
+    {% if q.citations %}<br>Cités à votre place : {{ q.citations | join(", ") }}{% else %}<br><span class="impact">Aucune source citée dans cette réponse.</span>{% endif %}</p>
     {% endif %}
   </div>
   {% endfor %}
@@ -302,7 +307,7 @@
     {% if q.verbatim %}<blockquote>« {{ q.verbatim }} »</blockquote>{% endif %}
     <p>{% if q.cited %}<span class="cited-yes">✓ Votre site est cité dans cette réponse.</span>
     {% else %}<span class="cited-no">✗ Votre site n'est pas cité.</span>{% endif %}
-    {% if q.citations %}<br>Cités à votre place : {{ q.citations | join(", ") }}{% endif %}</p>
+    {% if q.citations %}<br>Cités à votre place : {{ q.citations | join(", ") }}{% else %}<br><span class="impact">Aucune source citée dans cette réponse.</span>{% endif %}</p>
     {% endif %}
   </div>
   {% endfor %}

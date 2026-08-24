@@ -51,8 +51,44 @@ kw = audit.extract_keyword(html_good, "example.fr")
 check("keyword extracted", len(kw) > 3, kw)
 qfr = audit.build_queries("boulangerie artisanale", "fr")
 qen = audit.build_queries("artisan bakery", "en")
-check("15 FR queries", len(qfr) == 15 and all("boulangerie" in q for q in qfr))
+check("15 FR queries", len(qfr) == 15 and all("boulangerie" in q.lower() for q in qfr))
 check("15 EN queries", len(qen) == 15 and all("bakery" in q for q in qen))
+
+# B1 (t_148128db) : gabarits FR grammaticaux avec un secteur PLURIEL +
+# première lettre toujours capitalisée.
+qfr2 = audit.build_queries("services web, SEO et conformité numérique", "fr")
+check("B1: requêtes capitalisées", all(q[0].isupper() for q in qfr2 + qen),
+      str(qfr2[:2]))
+check("B1: gabarit 1 accordé via « prestataire de »",
+      qfr2[0] == ("Quel est le meilleur prestataire de services web, SEO et "
+                  "conformité numérique pour une petite entreprise ?"), qfr2[0])
+check("B1: pas d'accord singulier/pluriel fautif",
+      not any("meilleur services" in q or "un bon services" in q or
+              "prestataire services" in q for q in qfr2), str(qfr2))
+
+# D3 (t_148128db) : verdict robots.txt nuancé (« absent » = autorisé par
+# défaut, pas « autorisé »).
+check("D3: verdict robots nuancé FR",
+      "absent du fichier" in audit._TXT["fr"]["robots_ok"] and
+      "autorisé par défaut" in audit._TXT["fr"]["robots_ok"])
+check("D3: verdict robots nuancé EN",
+      "absent from the file" in audit._TXT["en"]["robots_ok"])
+
+# D1 (t_148128db) : E-E-A-T « OK » exige TOUS les signaux — un signal manquant
+# = À améliorer, jamais OK 20/20 contradictoire.
+t_full = audit.technical_audit(html_good, r_allow, "https://example.fr")
+check("D1: eeat complet = pass 20/20",
+      t_full["checks"]["eeat"]["status"] == "pass" and
+      t_full["checks"]["eeat"]["points"] == 20,
+      str(t_full["checks"]["eeat"]))
+html_partial = html_good.replace('<time>2026-01-01</time>', "") \
+                        .replace('<meta name="author" content="Jean Martin">', "")
+t_partial = audit.technical_audit(html_partial, r_allow, "https://example.fr")
+check("D1: eeat avec signaux manquants = À améliorer (pas OK)",
+      t_partial["checks"]["eeat"]["status"] == "warn" and
+      t_partial["checks"]["eeat"]["points"] == 10 and
+      t_partial["checks"]["eeat"]["missing"],
+      str(t_partial["checks"]["eeat"]))
 
 # --- degraded mode (no key) ---
 os.environ.pop("PERPLEXITY_API_KEY", None)
@@ -268,6 +304,17 @@ v3 = audit._verbatim("Voici un comparatif rapide. ### Tableau | Solution | Prix 
                      "| A | 29 € | | B | 49 € |")
 check("verbatim: markdown tableau/headers nettoyé",
       "|" not in v3 and "#" not in v3 and "---" not in v3, v3)
+# A2 (t_148128db) : le préambule d'agent (« Je vais rechercher… ») n'est pas
+# une réponse — il est retiré du verbatim montré au client.
+v4 = audit._verbatim("Je vais rechercher les meilleures solutions actuelles pour vous. "
+                     "Les leaders sont A et B. Ils dominent le marché.")
+check("A2: préambule agent FR supprimé du verbatim",
+      v4.startswith("Les leaders sont A et B"), v4)
+v5 = audit._verbatim("Let me search for current solutions. The leaders are A and B.")
+check("A2: préambule agent EN supprimé du verbatim",
+      v5.startswith("The leaders are A and B"), v5)
+check("A2: réponse sans préambule inchangée",
+      audit._verbatim("Voici un comparatif.").startswith("Voici un comparatif"))
 
 # CMS detection
 cms_wp = audit.detect_cms('<html><head></head><body><link href="/wp-content/themes/x/style.css"></body></html>', "fr")

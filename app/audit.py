@@ -42,20 +42,25 @@ AI_BOTS = ["GPTBot", "ClaudeBot", "PerplexityBot", "Google-Extended", "CCBot",
 # ---------------------------------------------------------------- templates
 
 QUERY_TEMPLATES = {
+    # B1 (relecture t_148128db) : le secteur injecté ({kw}) est une formulation
+    # libre (souvent plurielle, ex. « services web, SEO et conformité
+    # numérique ») — les gabarits placent donc {kw} après « de/en » pour éviter
+    # tout accord singulier/pluriel (« le meilleur services web »), et
+    # build_queries capitalise le premier caractère.
     "fr": [
-        "Quel est le meilleur {kw} pour une petite entreprise ?",
+        "Quel est le meilleur prestataire de {kw} pour une petite entreprise ?",
         "Où acheter {kw} en ligne en France ?",
         "{kw} : avis et comparatif {year}",
         "Quels sont les meilleurs sites de {kw} ?",
-        "Comment choisir un bon {kw} ?",
+        "Comment choisir une bonne solution de {kw} ?",
         "{kw} pas cher : quelles sont les meilleures options ?",
         "Quel professionnel contacter pour {kw} ?",
         "Top sites recommandés pour {kw}",
         "{kw} : quelles entreprises sont fiables ?",
         "Meilleure alternative pour {kw} en France",
-        "Qui sont les leaders du marché de {kw} ?",
+        "Qui sont les leaders du marché en {kw} ?",
         "{kw} : comparatif des prix et services",
-        "Où trouver un bon prestataire {kw} ?",
+        "Où trouver un bon prestataire de {kw} ?",
         "Quels sites sont cités comme référence en {kw} ?",
         "Recommandations d'experts pour {kw}",
     ],
@@ -86,7 +91,9 @@ _TXT = {
     "fr": {
         "robots_missing": "robots.txt introuvable — les bots IA sont autorisés par défaut",
         "robots_blocked": "robots.txt bloque : {bots}",
-        "robots_ok": "tous les principaux bots IA sont autorisés",
+        # D3 (t_148128db) : « autorisés » prêtait à confusion quand les bots
+        # sont « absent du fichier » (= autorisé par défaut, pas explicitement).
+        "robots_ok": "aucun bot IA n'est bloqué — « absent du fichier » signifie autorisé par défaut",
         "extract_pass": "contenu textuel lisible par les IA — quantité suffisante pour être cité",
         "extract_warn": "contenu textuel un peu mince : étoffez le texte visible sans JavaScript pour maximiser vos chances d'être cité",
         "extract_fail": "contenu trop mince — la page semble dépendre de JavaScript ; les IA risquent de ne pas pouvoir lire votre offre",
@@ -107,7 +114,7 @@ _TXT = {
     "en": {
         "robots_missing": "robots.txt not found — AI bots default to allowed",
         "robots_blocked": "robots.txt blocks: {bots}",
-        "robots_ok": "all major AI bots allowed",
+        "robots_ok": "no AI bot is blocked — 'absent from the file' means allowed by default",
         "extract_pass": "text content readable by AIs — sufficient volume to be cited",
         "extract_warn": "text content is on the thin side: expand the text visible without JavaScript to maximize your chances of being cited",
         "extract_fail": "content too thin — the page seems to depend on JavaScript; AIs may be unable to read your offer",
@@ -250,12 +257,17 @@ def technical_audit(html: str, robots_text: "str | None", final_url: str,
     https_ok = final_url.startswith("https")
     if not https_ok:
         missing.append(T["miss_https"]); missing_codes.append("https")
-    if signals and https_ok:
-        pts, status = 20, "pass"
+    # D1 (relecture t_148128db) : 5 pts par signal de confiance présent
+    # (about/dates/auteur) + 5 pts HTTPS = 20. Le statut « OK » exige TOUS les
+    # signaux — « OK 20/20 » avec des « Signaux manquants » listés juste en
+    # dessous se contredisait pour un client non-technique.
+    pts = 5 * len(signal_codes) + (5 if https_ok else 0)
+    if pts == 20:
+        status = "pass"
     elif https_ok:
-        pts, status = 10, "warn"
+        status = "warn"
     else:
-        pts, status = 0, "fail"
+        status = "fail"
     checks["eeat"] = {"status": status, "points": pts,
                       "detail": "; ".join(signals + missing) or T["eeat_https_only"],
                       "signals": signals, "missing": missing,
@@ -307,7 +319,13 @@ def extract_keyword(html: str, domain: str) -> str:
 def build_queries(keyword: str, lang: str) -> list:
     year = time.strftime("%Y")
     lang = lang if lang in QUERY_TEMPLATES else "en"
-    return [t.format(kw=keyword, year=year) for t in QUERY_TEMPLATES[lang]][:N_QUERIES]
+    out = []
+    for t in QUERY_TEMPLATES[lang][:N_QUERIES]:
+        q = t.format(kw=keyword, year=year).strip()
+        # B1 (t_148128db) : une requête montrée au client ne commence jamais
+        # par une minuscule (« services web : avis et comparatif 2026 »).
+        out.append(q[0].upper() + q[1:] if q else q)
+    return out
 
 
 # ---------------------------------------------------------------- moteurs IA (t_9864864c)
@@ -382,6 +400,18 @@ def _host_of(url: str) -> str:
         return ""
 
 
+# Préambules d'agent à ne jamais montrer au client (A2, relecture t_148128db :
+# « Je vais rechercher les meilleures solutions actuelles… » apparaissait dans
+# les verbatims). Garde-fou au niveau verbatim — le correctif principal est
+# dans engines._parse_anthropic (texte après la recherche web uniquement).
+_PREAMBLE_START = re.compile(
+    r"^(?:je vais (?:rechercher|chercher|consulter|vérifier|effectuer|lancer)|"
+    r"je recherche|permettez-moi de|"
+    r"(?:let me|i'll|i will|i am going to|allow me to)\s+"
+    r"(?:search|look|check|research|browse|find))",
+    re.IGNORECASE)
+
+
 def _verbatim(text: str, max_chars: int = 300) -> str:
     """First 1-2 real sentences of an AI answer, capped — the client sees what
     the AI literally says (rapport niveau 2). Strips markdown noise (citation
@@ -396,6 +426,12 @@ def _verbatim(text: str, max_chars: int = 300) -> str:
     if not t:
         return ""
     parts = [p for p in re.split(r"(?<=[.!?…])\s+", t) if p.strip()]
+    # A2 : ignorer les phrases d'ouverture qui ne sont que le raisonnement de
+    # l'agent (« Je vais rechercher… ») — ne garder que la réponse.
+    while parts and _PREAMBLE_START.match(parts[0].strip()):
+        parts.pop(0)
+    if not parts:
+        return ""
     out = " ".join(parts[:2]) if parts else t
     if len(out) > max_chars:
         out = out[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
@@ -586,7 +622,7 @@ Formule le secteur d'activité EXACT de ce site en 3 à 6 mots, en français, de
 - jamais un terme polysémique nu : « micro-outils » évoque le bricolage, « solutions » ne veut rien dire ;
   si le site vend des logiciels, dis « logiciels en ligne … » ou « micro-SaaS … », jamais « outils » seul ;
 - la formulation doit s'insérer naturellement dans des questions d'intention d'achat comme
-  « Quel est le meilleur X pour une petite entreprise ? » ou « Où acheter X en ligne ? » ;
+  « Quel est le meilleur prestataire de X pour une petite entreprise ? » ou « Où acheter X en ligne ? » ;
 - utilise les termes qu'un acheteur taperait réellement dans un moteur de recherche.
 JSON attendu : {{"secteur": "...", "alternatives": ["...", "..."]}}""",
     "en": """Here is the homepage content of the site {domain}:

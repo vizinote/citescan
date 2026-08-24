@@ -23,23 +23,31 @@ def check(name, cond, extra=""):
 # ---------------------------------------------------------------- fake client
 
 class _FakeResp:
-    def __init__(self, status, payload=None, headers=None):
+    def __init__(self, status, payload=None, headers=None, url=""):
         self.status_code = status
         self._payload = payload or {}
         self.headers = headers or {}
+        self.url = url
 
     def json(self):
         return self._payload
 
 
 class _FakeClient:
-    def __init__(self, responses):
+    def __init__(self, responses, get_responses=None):
         self.responses = list(responses)
+        self.get_responses = list(get_responses or [])
         self.sent = []
 
     async def post(self, url, json=None, headers=None):
         self.sent.append({"url": url, "json": json, "headers": headers})
         return self.responses.pop(0)
+
+    async def get(self, url, follow_redirects=False, timeout=None):
+        self.sent.append({"url": url, "get": True})
+        if not self.get_responses:
+            raise RuntimeError("pas de réponse GET mockée")
+        return self.get_responses.pop(0)
 
 
 def _set_keys(**kw):
@@ -266,6 +274,74 @@ check("gemini: grounding google_search activé",
 # coût = 400*0.30e-6 + 100*2.50e-6 + 0 = 0.00037
 check("gemini: coût tokens mesuré, grounding gratuit", abs(r["cost"] - 0.00037) < 1e-6,
       str(r["cost"]))
+
+# ------------------------------------------- t_148128db : grounding redirect
+# Les groundingChunks renvoient des URL vertexaisearch.cloud.google.com/...
+# (redirection) — elles doivent être RÉSOLUES vers la destination réelle,
+# jamais comptées comme « concurrent cité ».
+_GEMINI_REDIRECT = {
+    "candidates": [
+        {"content": {"parts": [{"text": "Réponse."}]},
+         "groundingMetadata": {
+             "groundingChunks": [
+                 {"web": {"uri": "https://vertexaisearch.cloud.google.com/"
+                                  "grounding-api-redirect/abc"}},
+                 {"web": {"uri": "https://d.fr/w"}},
+             ],
+         }},
+    ],
+    "usageMetadata": {"promptTokenCount": 400, "candidatesTokenCount": 100},
+}
+_set_keys(GEMINI_API_KEY="gkey")
+fc = _FakeClient([_FakeResp(200, _GEMINI_REDIRECT)],
+                 get_responses=[_FakeResp(200, url="https://reel-site.fr/article")])
+r = asyncio.run(engines.query_engine("gemini", fc, "q", "fr"))
+check("gemini redirect: résolu vers le domaine réel",
+      "https://reel-site.fr/article" in r["citations"], str(r["citations"]))
+check("gemini redirect: vertexaisearch absent des citations",
+      not any("vertexaisearch" in u for u in r["citations"]), str(r["citations"]))
+check("gemini redirect: citations directes conservées",
+      "https://d.fr/w" in r["citations"], str(r["citations"]))
+
+# résolution impossible -> l'URL d'infrastructure est EXCLUE (pas de domaine
+# technique dans les résultats client)
+fc = _FakeClient([_FakeResp(200, _GEMINI_REDIRECT)])  # pas de GET mocké -> échec
+r = asyncio.run(engines.query_engine("gemini", fc, "q", "fr"))
+check("gemini redirect KO: URL infra exclue",
+      r["citations"] == ["https://d.fr/w"], str(r["citations"]))
+
+# défense en profondeur : le filtre infra s'applique à TOUS les moteurs
+check("infra: vertexaisearch détecté",
+      engines._is_infra_url("https://vertexaisearch.cloud.google.com/x") and
+      not engines._is_infra_url("https://d.fr/w"))
+
+# ------------------------------------------- t_148128db : préambule Claude
+# Le texte AVANT le web_search_tool_result (« Je vais rechercher… ») est le
+# raisonnement interne de l'agent : exclu de l'answer (verbatim client).
+_ANTHROPIC_PREAMBLE = {
+    "content": [
+        {"type": "text",
+         "text": "Je vais rechercher les meilleures solutions actuelles."},
+        {"type": "web_search_tool_result", "tool_use_id": "srv_1",
+         "content": [
+             {"type": "web_search_result", "url": "https://c.fr/z", "title": "C"},
+         ]},
+        {"type": "text", "text": "Voici la réponse réelle pour le client."},
+    ],
+    "usage": {"input_tokens": 500, "output_tokens": 100,
+              "server_tool_use": {"web_search_requests": 1}},
+}
+parsed = engines._parse_anthropic(_ANTHROPIC_PREAMBLE)
+check("claude: préambule d'agent exclu de l'answer",
+      parsed["answer"] == "Voici la réponse réelle pour le client.",
+      parsed["answer"])
+check("claude: citations conservées malgré le filtre préambule",
+      parsed["citations"] == ["https://c.fr/z"], str(parsed["citations"]))
+# sans recherche web : tout le texte est conservé (comportement historique)
+_no_search = {"content": [{"type": "text", "text": "Réponse directe."}],
+              "usage": {"input_tokens": 1, "output_tokens": 1}}
+check("claude: sans recherche, answer conservé",
+      engines._parse_anthropic(_no_search)["answer"] == "Réponse directe.")
 
 # ---------------------------------------------------------------- mock Mistral (désactivé mais parsable)
 

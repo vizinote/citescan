@@ -86,8 +86,12 @@
   @media print {
     body { background: #fff; }
     header.band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    h2 { page-break-after: avoid; }
-    .check, .action, .phase, .deliv, .verbatim, table { page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
+    /* Relecture t_148128db (C2/C3/C4) : un tableau ou une carte haute ne doit
+       ni être repoussé à la page suivante en laissant un grand blanc, ni être
+       coupé au milieu d'une ligne. */
+    tr, .action, .phase, .deliv, .verbatim { page-break-inside: avoid; }
+    table, .check { page-break-inside: auto; }
   }
 </style>
 </head>
@@ -176,7 +180,7 @@
   that will close the gap — each with its exact title and angle.</p>
   {% for a in actions_contenu %}
   <div class="deliv">
-    <h3>📝 "{{ a.titre }}"</h3>
+    <h3>"{{ a.titre }}"</h3>
     <p><strong>Angle:</strong> {{ a.angle }}</p>
   </div>
   {% endfor %}
@@ -278,7 +282,7 @@
     {% if q.verbatim %}<blockquote>"{{ q.verbatim }}"</blockquote>{% endif %}
     <p>{% if q.cited %}<span class="cited-yes">✓ Your site is cited in this answer.</span>
     {% else %}<span class="cited-no">✗ Your site is not cited.</span>{% endif %}
-    {% if q.citations %}<br>Cited instead of you: {{ q.citations | join(", ") }}{% endif %}</p>
+    {% if q.citations %}<br>Cited instead of you: {{ q.citations | join(", ") }}{% else %}<br><span class="impact">No source cited in this answer.</span>{% endif %}</p>
     {% endif %}
   </div>
   {% endfor %}
@@ -302,7 +306,7 @@
     {% if q.verbatim %}<blockquote>"{{ q.verbatim }}"</blockquote>{% endif %}
     <p>{% if q.cited %}<span class="cited-yes">✓ Your site is cited in this answer.</span>
     {% else %}<span class="cited-no">✗ Your site is not cited.</span>{% endif %}
-    {% if q.citations %}<br>Cited instead of you: {{ q.citations | join(", ") }}{% endif %}</p>
+    {% if q.citations %}<br>Cited instead of you: {{ q.citations | join(", ") }}{% else %}<br><span class="impact">No source cited in this answer.</span>{% endif %}</p>
     {% endif %}
   </div>
   {% endfor %}
