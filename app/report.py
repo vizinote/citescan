@@ -117,7 +117,7 @@ def _build_context(report: dict) -> dict:
         "score_citation": score.get("citation"),
         "mode": score.get("mode", "degraded"),
         "keyword": audit.get("keyword", ""),
-        "word_count": technical.get("word_count", 0),
+        "synthese": audit.get("synthese"),
         "technical_error": technical.get("error"),
         "checks": checks,
         "citations_status": citations.get("status", "unavailable"),

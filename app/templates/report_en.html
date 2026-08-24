@@ -98,9 +98,13 @@
   The sections below are limited.</p>
   {% endif %}
 
+  {% if synthese %}
+  <h2>Executive summary</h2>
+  <p>{{ synthese }}</p>
+  {% endif %}
+
   <h2>1. Detailed technical audit</h2>
-  <p>These four checks verify that AI crawlers can read and understand your site.
-  Content extractable without JavaScript: <strong>{{ word_count }} words</strong>.</p>
+  <p>These four checks verify that AI crawlers can read and understand your site.</p>
 
   {% for c in checks %}
   <div class="check {{ c.status }}">

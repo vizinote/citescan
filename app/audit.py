@@ -23,6 +23,13 @@ PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 PERPLEXITY_MODEL = "sonar"
 N_QUERIES = 15
 
+# Rédaction du rapport client : V4 pro via OpenRouter (exigence Franck 2026-08-24).
+# Sonar reste le moteur d'audit (données brutes) ; V4 pro rédige la synthèse et
+# le plan d'action livrés au client, dans la langue du parcours.
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+WRITER_MODEL = "deepseek/deepseek-v4-pro-0813"
+
 AI_BOTS = ["GPTBot", "ClaudeBot", "PerplexityBot", "Google-Extended", "CCBot",
            "Amazonbot", "Bytespider", "OAI-SearchBot", "ChatGPT-User", "Applebot-Extended"]
 
@@ -507,6 +514,138 @@ def build_action_plan(technical: dict, citations: dict, lang: str) -> list:
     return plan[:10]
 
 
+# ---------------------------------------------------------------- client-facing writing (V4 pro)
+
+_WRITER_SYSTEM = {
+    "fr": "Tu es un consultant senior en visibilité IA (GEO). Tu rédiges des rapports "
+          "d'audit pour des dirigeants de TPE non techniques. Français impeccable, ton "
+          "professionnel et direct, phrases courtes, aucun jargon non expliqué. Tu "
+          "réponds UNIQUEMENT avec l'objet JSON demandé, sans markdown ni commentaire.",
+    "en": "You are a senior AI visibility (GEO) consultant. You write audit reports "
+          "for non-technical small-business owners. Impeccable English, professional "
+          "and direct tone, short sentences, no unexplained jargon. You answer ONLY "
+          "with the requested JSON object, no markdown, no commentary.",
+}
+
+_WRITER_USER = {
+    "fr": """Voici les données brutes d'un audit de visibilité IA du site {domain}.
+Secteur détecté : « {keyword} ». Score global : {total}/100 (audit technique {tech}/100, \
+citations {cite}). Le site est cité dans {cited}/{n} réponses de Perplexity à des questions \
+d'intention d'achat. Concurrents les plus cités : {comps}.
+Constats techniques : {tech_details}
+Plan d'action brut (déjà priorisé) : {plan}
+
+Rédige en français impeccable :
+1. "synthese" : 3 à 4 phrases honnêtes — où en est le site, l'enjeu business, ce que \
+le plan ci-dessous apporte.
+2. "actions" : le plan d'action réécrit, 3 à 6 actions concrètes et précises (quoi faire, \
+où, avec quel outil ou quelle démarche), chacune avec "action" (texte), "impact" (1-10) et \
+"effort" (1-10). Garde l'ordre de priorité du plan brut.
+JSON attendu : {{"synthese": "...", "actions": [{{"action": "...", "impact": 8, "effort": 3}}]}}""",
+    "en": """Here is the raw data of an AI visibility audit for {domain}.
+Detected sector: "{keyword}". Overall score: {total}/100 (technical audit {tech}/100, \
+citations {cite}). The site is cited in {cited}/{n} Perplexity answers to buyer-intent \
+questions. Most cited competitors: {comps}.
+Technical findings: {tech_details}
+Draft action plan (already prioritized): {plan}
+
+Write in impeccable English:
+1. "synthese": 3 to 4 honest sentences — where the site stands, the business stake, what \
+the plan below delivers.
+2. "actions": the rewritten action plan, 3 to 6 concrete, precise actions (what to do, \
+where, with which tool or approach), each with "action" (text), "impact" (1-10) and \
+"effort" (1-10). Keep the draft plan's priority order.
+Expected JSON: {{"synthese": "...", "actions": [{{"action": "...", "impact": 8, "effort": 3}}]}}""",
+}
+
+
+def _parse_writer_output(raw: str) -> "dict | None":
+    """Validate the V4 pro JSON. Returns {"synthese": str, "actions": [...]} or None."""
+    try:
+        txt = raw.strip()
+        if txt.startswith("```"):
+            txt = txt.split("```")[1]
+            if txt.startswith("json"):
+                txt = txt[4:]
+        data = json.loads(txt)
+        synthese = (data.get("synthese") or "").strip()
+        actions = data.get("actions")
+        if not synthese or not isinstance(actions, list) or not actions:
+            return None
+        plan = []
+        for a in actions[:6]:
+            action = (a.get("action") or "").strip()
+            if not action:
+                continue
+            try:
+                impact = max(1, min(10, int(a.get("impact", 5))))
+                effort = max(1, min(10, int(a.get("effort", 5))))
+            except (TypeError, ValueError):
+                continue
+            plan.append({"action": action, "impact": impact, "effort": effort,
+                         "priority_score": round(impact / effort, 1)})
+        if not plan:
+            return None
+        for i, item in enumerate(plan, 1):
+            item["rank"] = i
+        return {"synthese": synthese, "actions": plan}
+    except Exception:
+        return None
+
+
+async def write_client_report(audit_data: dict, lang: str) -> "dict | None":
+    """V4 pro rewrites the client-facing text (synthesis + action plan) from the
+    raw audit data. Returns None on any failure — the caller falls back to the
+    rule-based library plan (explicit 'writer' field in the audit JSON)."""
+    if not OPENROUTER_API_KEY:
+        return None
+    lang = lang if lang in _WRITER_SYSTEM else "en"
+    score = audit_data.get("score") or {}
+    technical = audit_data.get("technical") or {}
+    citations = audit_data.get("citations") or {}
+    cite_score = score.get("citation")
+    cite_txt = (f"{cite_score}/100" if cite_score is not None
+                else ("indisponible" if lang == "fr" else "unavailable"))
+    tech_details = "; ".join(
+        c.get("detail", "") for c in (technical.get("checks") or {}).values()
+    ) or (technical.get("error") or "")
+    comps = ", ".join(c["domain"] for c in (citations.get("competitors") or [])[:5]) or \
+        ("aucun" if lang == "fr" else "none")
+    plan_txt = " | ".join(a["action"] for a in (audit_data.get("action_plan") or [])) or \
+        ("aucun" if lang == "fr" else "none")
+    user = _WRITER_USER[lang].format(
+        domain=audit_data.get("domain", ""),
+        keyword=audit_data.get("keyword", ""),
+        total=score.get("total", 0), tech=score.get("technical", 0), cite=cite_txt,
+        cited=citations.get("cited_count", 0), n=citations.get("total", 0),
+        comps=comps, tech_details=tech_details[:1200], plan=plan_txt[:1500],
+    )
+    timeout = httpx.Timeout(90.0)
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.post(OPENROUTER_URL, json={
+                    "model": WRITER_MODEL,
+                    "messages": [{"role": "system", "content": _WRITER_SYSTEM[lang]},
+                                 {"role": "user", "content": user}],
+                    "temperature": 0.3,
+                    "max_tokens": 1800,
+                    "response_format": {"type": "json_object"},
+                }, headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://citescan.brozapi.com",
+                            "X-Title": "CiteScan report writer"})
+            if r.status_code != 200:
+                continue
+            content = r.json()["choices"][0]["message"]["content"]
+            parsed = _parse_writer_output(content)
+            if parsed:
+                return parsed
+        except Exception:
+            continue
+    return None
+
+
 # ---------------------------------------------------------------- orchestration
 
 async def run_paid_audit(url: str, lang: str = "en") -> dict:
@@ -543,7 +682,7 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
     score = compute_score(technical, citations)
     plan = build_action_plan(technical, citations, lang) if not fetch_error else []
 
-    return {
+    result = {
         "domain": domain,
         "lang": lang,
         "keyword": keyword,
@@ -555,3 +694,16 @@ async def run_paid_audit(url: str, lang: str = "en") -> dict:
         "perplexity_available": bool(PERPLEXITY_API_KEY),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+
+    # Rédaction client par V4 pro (synthèse + plan d'action), langue du parcours.
+    # Fallback explicite sur le plan issu de la bibliothèque si indisponible.
+    written = await write_client_report(result, lang)
+    if written:
+        result["synthese"] = written["synthese"]
+        if written["actions"]:
+            result["action_plan"] = written["actions"]
+        result["writer"] = WRITER_MODEL
+    else:
+        result["synthese"] = None
+        result["writer"] = "fallback-library" if OPENROUTER_API_KEY else "no-openrouter-key"
+    return result

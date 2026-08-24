@@ -79,6 +79,8 @@ cat > /tmp/t_audit_fr.json <<'EOF'
  "citations": {"status": "unavailable", "reason": "PERPLEXITY_API_KEY non définie — mode dégradé (audit technique seul)",
                "queries": [], "cited_count": 0, "total": 0, "competitors": []},
  "action_plan": [{"action": "Ajouter des données structurées JSON-LD sur la page d'accueil.", "impact": 8, "effort": 3, "priority_score": 2.7, "rank": 1}],
+ "synthese": "Votre site est techniquement solide mais reste invisible des IA. Ce rapport priorise les actions à mener.",
+ "writer": "deepseek/deepseek-v4-pro-0813",
  "mode": "degraded", "generated_at": "2026-08-24T00:00:00Z"}
 EOF
 cat > /tmp/t_audit_en.json <<'EOF'
@@ -94,6 +96,8 @@ cat > /tmp/t_audit_en.json <<'EOF'
  "citations": {"status": "unavailable", "reason": "PERPLEXITY_API_KEY not set — degraded mode (technical audit only)",
                "queries": [], "cited_count": 0, "total": 0, "competitors": []},
  "action_plan": [{"action": "Add JSON-LD structured data on the homepage and key pages.", "impact": 8, "effort": 3, "priority_score": 2.7, "rank": 1}],
+ "synthese": "Your site is technically sound but invisible to AI assistants. This report prioritizes what to do next.",
+ "writer": "deepseek/deepseek-v4-pro-0813",
  "mode": "degraded", "generated_at": "2026-08-24T00:00:00Z"}
 EOF
 
@@ -103,10 +107,13 @@ TOKFR=$(printf '%s' "$RFR" | python3 -c 'import sys,json; print(json.load(sys.st
 ok "rapport FR cree" "$([ -n "$TOKFR" ] && echo oui)" "oui"
 HFR=$(curl -s "$BASE/rapports/$TOKFR")
 has "rapport FR : titre FR" "$HFR" "Rapport d'audit de visibilité IA"
+has "rapport FR : synthese V4 affichee" "$HFR" "Synthèse"
+has "rapport FR : synthese FR" "$HFR" "invisible des IA"
 has "rapport FR : detail FR" "$HFR" "introuvable"
 has "rapport FR : plan FR" "$HFR" "Plan d'action priorisé"
 hasnot "rapport FR : zero anglais technique" "$HFR" "without JS"
 hasnot "rapport FR : zero anglais detail" "$HFR" "not found — AI bots"
+hasnot "rapport FR : jargon word count retire" "$HFR" "mots</strong>"
 
 REN=$(curl -s -H "X-Internal-Token: $TOKEN" -H "Content-Type: application/json" \
       -d "{\"lang\":\"en\",\"audit\":$(cat /tmp/t_audit_en.json)}" "$BASE/api/report")
@@ -114,8 +121,11 @@ TOKEN_EN=$(printf '%s' "$REN" | python3 -c 'import sys,json; print(json.load(sys
 ok "rapport EN cree" "$([ -n "$TOKEN_EN" ] && echo oui)" "oui"
 HEN=$(curl -s "$BASE/rapports/$TOKEN_EN")
 has "rapport EN : titre EN" "$HEN" "AI Visibility Audit Report"
+has "rapport EN : synthese affichee" "$HEN" "Executive summary"
+has "rapport EN : synthese EN" "$HEN" "invisible to AI assistants"
 has "rapport EN : detail EN" "$HEN" "without JavaScript"
 hasnot "rapport EN : zero FR" "$HEN" "Rapport d'audit"
+hasnot "rapport EN : jargon word count retire" "$HEN" "words</strong>"
 
 PDF=$(curl -s -o /tmp/t_rep.pdf -w "%{http_code}" "$BASE/rapports/$TOKFR/pdf")
 ok "PDF FR -> 200" "$PDF" "200"

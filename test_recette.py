@@ -94,5 +94,25 @@ check("plan FR impeccable (pas d'anglais)",
 check("Sonar system FR", "français" in audit._SONAR_SYSTEM["fr"])
 check("Sonar system EN", "English" in audit._SONAR_SYSTEM["en"])
 
+# --- redacteur V4 pro : parsing + fallback ---
+good = '{"synthese": "Votre site est solide techniquement mais invisible.", "actions": [{"action": "Ajouter du JSON-LD.", "impact": 8, "effort": 3}]}'
+p = audit._parse_writer_output(good)
+check("writer: parse JSON propre", p is not None and p["synthese"] and
+      p["actions"][0]["rank"] == 1 and p["actions"][0]["priority_score"] == round(8/3, 1))
+fenced = "```json\n" + good + "\n```"
+check("writer: parse bloc ```json", audit._parse_writer_output(fenced) is not None)
+check("writer: rejet JSON invalide", audit._parse_writer_output("not json") is None)
+check("writer: rejet sans actions",
+      audit._parse_writer_output('{"synthese": "ok", "actions": []}') is None)
+check("writer: rejet sans synthese",
+      audit._parse_writer_output('{"actions": [{"action": "x", "impact": 5, "effort": 5}]}') is None)
+
+# sans cle OpenRouter : jamais d'appel reseau, fallback explicite
+_old_key = audit.OPENROUTER_API_KEY
+audit.OPENROUTER_API_KEY = ""
+check("writer: None sans cle",
+      asyncio.run(audit.write_client_report({"score": {}, "technical": {}, "citations": {}}, "fr")) is None)
+audit.OPENROUTER_API_KEY = _old_key
+
 print(f"\nRECETTE: {PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)
