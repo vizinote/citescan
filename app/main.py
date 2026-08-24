@@ -232,3 +232,50 @@ async def index_en():
 async def index_fr():
     from fastapi.responses import FileResponse
     return FileResponse("static/fr/index.html")
+
+
+# ---------------------------------------------------------------- SEO (carte 3.5)
+
+# Cle IndexNow partagee avec les autres domaines brozapi (cf. /root/indexnow_ping.py).
+INDEXNOW_KEY = "a9e8fc609645365e02a9b0e2703de984"
+
+# Pages publiques indexables (les rapports /rapports/<token> sont noindex,
+# /merci et l'offre restent hors sitemap tant que le paiement n'est pas actif).
+SITEMAP_URLS = [
+    ("https://citescan.brozapi.com/", "1.0"),
+    ("https://citescan.brozapi.com/fr/", "0.9"),
+]
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    from fastapi.responses import Response
+    urls = "".join(
+        f"  <url><loc>{loc}</loc><changefreq>weekly</changefreq>"
+        f"<priority>{prio}</priority></url>\n"
+        for loc, prio in SITEMAP_URLS
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}</urlset>\n"
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/robots.txt")
+def robots():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /rapports/\n"
+        "\n"
+        "Sitemap: https://citescan.brozapi.com/sitemap.xml\n"
+    )
+
+
+@app.get(f"/{INDEXNOW_KEY}.txt")
+def indexnow_key():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(INDEXNOW_KEY)
