@@ -62,12 +62,12 @@ EN=$(curl -s "$BASE/")
 FR=$(curl -s "$BASE/fr/")
 ok "/ -> 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")" "200"
 ok "/fr/ -> 200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/fr/")" "200"
-has "/ EN : titre EN" "$EN" "Is your site cited by ChatGPT"
+has "/ EN : titre EN" "$EN" "Is ChatGPT citing your competitors instead of you"
 has "/ EN : bouton EN" "$EN" "Scan my site"
 hasnot "/ EN : pas de FR dans le corps" "$EN" "Scanner mon site"
-has "/fr/ FR : titre FR" "$FR" "Votre site est-il cité par ChatGPT"
+has "/fr/ FR : titre FR" "$FR" "ChatGPT cite-t-il vos concurrents à votre place"
 has "/fr/ FR : bouton FR" "$FR" "Scanner mon site"
-has "/fr/ FR : sous-titre FR" "$FR" "Scan gratuit instantané"
+has "/fr/ FR : sous-titre FR" "$FR" "Scan technique gratuit"
 hasnot "/fr/ FR : pas d'EN dans le corps" "$FR" "Scan my site"
 has "/fr/ : lien retour English vers /" "$FR" 'id="lang-switch" href="/"'
 has "/ : lien Français vers /fr/" "$EN" 'id="lang-switch" href="/fr/"'

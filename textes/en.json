@@ -1,6 +1,6 @@
 {
-  "tagline": "Is your site cited by ChatGPT and Perplexity?",
-  "hero_subtitle": "Free instant scan. Full audit + action plan in 24 h. One-time payment, no subscription.",
+  "tagline": "Is ChatGPT citing your competitors instead of you?",
+  "hero_subtitle": "Free instant technical scan. The full audit (from €29, one-time) tests your real citations on 15 buyer questions per AI engine and hands you a prioritized action plan within 24 h — weeks of guesswork settled for the price of a lunch.",
   "hero_badge": "Free scan — no email required",
   "hero_offer_link": "See the full audit — from €29",
   "scan_placeholder": "https://yoursite.com",
@@ -24,7 +24,7 @@
   "verdict_jsonld_types": "Types found",
   "verdict_missing_about": "No about page",
   "verdict_https_fail": "No HTTPS",
-  "offer_title": "Get the full audit + action plan",
+  "offer_title": "Full audit + action plan: close the gap with the competitors AI cites today",
   "offer_price": "from €29",
   "offer_sub": "one-time, delivered in 24 h, 7-day money-back guarantee",
   "offer_cta": "Buy the full audit",

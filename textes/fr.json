@@ -1,6 +1,6 @@
 {
-  "tagline": "Votre site est-il cité par ChatGPT et Perplexity ?",
-  "hero_subtitle": "Scan gratuit instantané. Audit multi-IA + plan d'action en 24 h, dès 29 €, sans abonnement.",
+  "tagline": "ChatGPT cite-t-il vos concurrents à votre place ?",
+  "hero_subtitle": "Scan technique gratuit et instantané. L'audit complet (dès 29 €, paiement unique) teste vos citations réelles sur 15 questions d'achat par IA et vous remet un plan d'action priorisé sous 24 h — des semaines de tâtonnement réglées pour le prix d'un déjeuner.",
   "hero_badge": "Scan gratuit — sans email",
   "hero_offer_link": "Voir l'audit complet — dès 29 €",
   "scan_placeholder": "https://votresite.fr",
@@ -24,7 +24,7 @@
   "verdict_jsonld_types": "Types trouvés",
   "verdict_missing_about": "Pas de page à propos",
   "verdict_https_fail": "Pas de HTTPS",
-  "offer_title": "Recevoir l'audit complet + plan d'action",
+  "offer_title": "Audit complet + plan d'action : combler l'écart avec les concurrents que les IA citent aujourd'hui",
   "offer_price": "dès 29 €",
   "offer_sub": "paiement unique, livré en 24 h, garantie satisfait/remboursé 7 j",
   "offer_cta": "Acheter l'audit complet",
