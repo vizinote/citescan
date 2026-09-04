@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPTBot, PerplexityBot, ClaudeBot : faut-il laisser les IA lire votre site ? — Blog CiteScan</title>
+<meta name="description" content="GPTBot, PerplexityBot, ClaudeBot : qui sont ces robots IA, que font-ils vraiment, et faut-il les autoriser dans votre robots.txt ? Un critère de décision simple.">
+<link rel="canonical" href="https://citescan.brozapi.com/blog/gptbot-perplexitybot-claudebot-robots-ia-site.html">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/seo.css">
+<script type="application/ld+json">{"@context":"https://***@type":"Article","headline":"GPTBot, PerplexityBot, ClaudeBot : faut-il laisser les IA lire votre site ?","datePublished":"2026-09-04","author":{"@type":"Organization","name":"CiteScan (Brozapi)"}}</script>
+</head>
+<body>
+<header class="site">
+  <div class="container">
+    <a class="logo" href="/fr/">
+      <svg viewBox="0 0 48 48" width="26" height="26" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="20" cy="20" r="11" stroke="#6d28d9" stroke-width="3"/>
+        <line x1="29" y1="29" x2="41" y2="41" stroke="#6d28d9" stroke-width="3" stroke-linecap="round"/>
+        <text x="13" y="24" font-size="13" font-weight="700" fill="#047857">"</text>
+      </svg>
+      <span>CiteScan</span>
+    </a>
+    <nav>
+      <a href="/secteurs/">Secteurs</a>
+      <a href="/blog/">Blog</a>
+      <a class="cta-nav" href="/fr/">Scan gratuit</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="container">
+    <p class="breadcrumb"><a href="/fr/">Accueil</a> &rsaquo; <a href="/blog/">Blog</a> &rsaquo; GPTBot, PerplexityBot, ClaudeBot : faut-il laisser les IA lire votre site ?</p>
+    <h1>GPTBot, PerplexityBot, ClaudeBot : faut-il laisser les IA lire votre site ?</h1>
+    <p class="intro">Vous avez jeté un œil aux logs de votre site, ou vous avez lu que «&nbsp;les IA copient les sites sans permission&nbsp;», et vous avez trouvé des visiteurs aux noms bizarres&nbsp;: GPTBot, PerplexityBot, ClaudeBot, Google-Extended. Ce ne sont pas des humains. Ce sont des robots envoyés par les entreprises d'intelligence artificielle pour lire le contenu du web. La question que vous vous posez, en tant que dirigeant, est simple&nbsp;: est-ce que je dois les laisser entrer, ou les bloquer&nbsp;?</p>
+    <p>Cet article vous explique, sans jargon, qui sont ces robots, ce qu'ils font vraiment, et comment décider — avec un critère simple qui évite de vous tromper.</p>
+
+    <h2>Qui sont ces robots : trois familles à distinguer</h2>
+    <p>Avant de décider quoi que ce soit, il faut comprendre que tous ces robots ne font pas la même chose. En les mettant dans le même sac, vous risquez de bloquer ce qui vous aide.</p>
+    <h3>1. Les robots d'entraînement</h3>
+    <p>Ce sont les plus connus, et les plus craints. <strong>GPTBot</strong> (celui d'OpenAI), <strong>ClaudeBot</strong> (celui d'Anthropic), <strong>PerplexityBot</strong> (celui de Perplexity) et <strong>Google-Extended</strong> (Google, pour Gemini) parcourent le web pour lire des milliards de pages. Leur but&nbsp;: donner à leurs modèles de la matière à apprendre — votre façon de rédiger, vos données, vos textes.</p>
+    <p>Le point important&nbsp;: un robot d'entraînement ne va pas afficher votre site à un internaute le lendemain. Il «&nbsp;digère&nbsp;» le contenu pour que l'IA «&nbsp;sache&nbsp;» des choses. Vous n'avez aucune visibilité directe en retour.</p>
+    <h3>2. Les robots de recherche IA</h3>
+    <p>Depuis peu, une deuxième famille est apparue&nbsp;: les robots qui alimentent les <strong>réponses des moteurs IA</strong>. C'est le cas d'<strong>OAI-SearchBot</strong> (OpenAI, pour que ChatGPT puisse rechercher et citer des pages), et d'une partie du trafic de Perplexity quand il répond en citant ses sources.</p>
+    <p>Eux, c'est différent&nbsp;: si votre site est lu et retenu, <strong>il peut apparaître dans une réponse, avec un lien vers vous</strong>. C'est votre nom, votre marque, cité devant quelqu'un qui cherchait exactement ce que vous vendez.</p>
+    <h3>3. Le cas Google-Extended : souvent mal compris</h3>
+    <p>Google-Extended n'est pas le robot d'indexation classique de Google (celui-là, c'est Googlebot, et vous n'avez surtout pas envie de le bloquer). Google-Extended est un <strong>code d'exclusion facultatif</strong>&nbsp;: Google vous dit «&nbsp;si vous ne voulez pas que vos pages servent à entraîner ou améliorer nos modèles IA, refusez ce robot-là — sans que ça touche à votre classement dans le moteur de recherche classique.&nbsp;»</p>
+    <p>Autrement dit&nbsp;: bloquer Google-Extended n'a aucun impact sur votre référencement Google. C'est l'un des rares cas où le choix est totalement sans risque.</p>
+
+    <h2>Que fait concrètement un robot IA quand il passe ?</h2>
+    <p>Quand GPTBot ou ClaudeBot visite votre site, il ne fait rien de plus savant que&nbsp;: lire vos pages, les enregistrer, et les analyser pour nourrir un modèle. Il respecte, en théorie, une règle du web appelée <code>robots.txt</code> — un petit fichier à la racine de votre site qui lui dit ce qu'il a le droit de lire ou non.</p>
+    <p>C'est là que vous avez le pouvoir. Voici un exemple de fichier qui <strong>bloque</strong> les robots d'entraînement tout en gardant votre visibilité&nbsp;:</p>
+    <pre><code>User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /</code></pre>
+    <p>Et voici l'inverse — un site qui <strong>autorise</strong> les IA&nbsp;:</p>
+    <pre><code>User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /</code></pre>
+    <p>Le détail compte&nbsp;: notez que si vous ajoutez ces règles vous-même, une seule ligne mal placée peut, dans le pire des cas, bloquer le robot de Google et faire disparaître votre site des résultats. C'est la première raison pour laquelle beaucoup de dirigeants préfèrent ne pas toucher ce fichier sans être sûrs.</p>
+
+    <h2>La vraie question à se poser : entrer dans les réponses IA ou pas</h2>
+    <p>Voici le critère qui simplifie tout. Il y a deux mondes, et beaucoup d'entreprises les confondent&nbsp;:</p>
+    <p><strong>Être lu pour étoffer un modèle</strong> (entraînement)&nbsp;: ça ne vous rapporte rien de visible. Votre contenu enrichit gratuitement un système qui ne vous cite pas.</p>
+    <p><strong>Être cité dans une réponse</strong> (recherche IA)&nbsp;: c'est de la visibilité. Quand quelqu'un demande «&nbsp;quel est le meilleur logiciel de facturation pour une PME&nbsp;», et que l'IA répond en citant votre page avec un lien, vous êtes dans la réponse, à la place d'un concurrent.</p>
+    <p>C'est exactement le cœur du sujet&nbsp;: <strong>la bataille n'est plus seulement pour être bien placé sur Google, mais pour être celui que l'IA choisit de recommander.</strong> Un dirigeant qui se demande encore si «&nbsp;le SEO&nbsp;» vaut le coup est en train de rater ce virage-là, parce que le classement qui compte se joue désormais dans les réponses écrites par l'IA, pas uniquement dans la liste bleue des liens.</p>
+
+    <h2>Comment choisir concrètement</h2>
+    <p>Pour la plupart des entreprises, la réponse n'est ni «&nbsp;tout bloquer&nbsp;» ni «&nbsp;tout laisser&nbsp;», mais un entre-deux réfléchi&nbsp;:</p>
+    <ol>
+      <li><strong>Ne bloquez jamais Googlebot.</strong> C'est votre visibilité sur Google, elle ne se négocie pas.</li>
+      <li><strong>Décidez pour l'entraînement selon votre stratégie.</strong> Si votre contenu est votre matière première (un éditeur, un cabinet, un média), vous pouvez choisir de bloquer GPTBot et ClaudeBot pour ne pas le donner gratuitement. Si votre priorité est avant tout d'être connu, vous pouvez l'accepter.</li>
+      <li><strong>Autorisez les robots de recherche IA</strong> (comme OAI-SearchBot) si vous voulez une chance d'apparaître dans les réponses, avec votre lien.</li>
+      <li><strong>Vérifiez avant de toucher.</strong> Un <code>robots.txt</code> mal écrit peut vous coûter votre référencement entier. Si vous n'êtes pas à l'aise, faites-le accompagner.</li>
+    </ol>
+    <p>Une chose est sûre&nbsp;: ce sujet va prendre de l'ampleur, et «&nbsp;je n'y comprends rien&nbsp;» n'est plus une stratégie tenable quand vos prospects posent de plus en plus leurs questions à ChatGPT ou Perplexity avant d'appeler un fournisseur.</p>
+
+    <h2>CiteScan, pour savoir où vous en êtes vraiment</h2>
+    <p>Le problème, c'est que ni vous ni moi ne pouvons deviner si une IA cite aujourd'hui votre entreprise ou celle de votre concurrent. C'est précisément ce que fait CiteScan&nbsp;: un <strong>scan technique gratuit et instantané, sans même demander votre email</strong>, qui regarde si votre site est cité par les IA. Si vous voulez aller plus loin, l'<strong>audit complet (dès 29&nbsp;€, paiement unique)</strong> teste vos citations réelles sur 15 questions d'acheteur pour chaque moteur d'IA, et vous remet en <strong>24&nbsp;h un rapport avec un plan d'action classé par priorité</strong> — avec un re-scan à J+30 inclus et une garantie de 7 jours.</p>
+    <p>C'est la façon de transformer cette question «&nbsp;j'autorise ou je bloque&nbsp;?&nbsp;» en une décision fondée sur un fait&nbsp;: votre position réelle dans les réponses, pas une impression.</p>
+
+    <h2>Questions fréquentes</h2>
+    <div class="faq">
+      <details><summary>Bloquer GPTBot va-t-il faire baisser mon trafic ?</summary><p>Pas directement sur Google, car GPTBot (entraînement) et Googlebot (indexation classique) sont deux choses séparées. En revanche, bloquer les robots de recherche IA vous exclut potentiellement des réponses citées, là où se trouve une part de trafic qui ne cesse de grandir.</p></details>
+      <details><summary>Puis-je autoriser l'entraînement mais bloquer la recherche, ou l'inverse ?</summary><p>Oui, c'est l'intérêt de distinguer les robots&nbsp;: vous gérez chaque famille indépendamment dans votre fichier <code>robots.txt</code>. Autoriser OAI-SearchBot (la recherche) tout en bloquant GPTBot (l'entraînement) est un choix tout à fait courant.</p></details>
+      <details><summary>En bloquant tous les robots IA, suis-je « protégé » contre la copie ?</summary><p>Non. Le <code>robots.txt</code> est une consigne, pas un verrou&nbsp;: il ne retient qu'un robot respectueux des règles. Et bloquer ne vous apporte rien de positif — cela vous prive seulement de visibilité, sans empêcher un acteur mal intentionné de passer outre.</p></details>
+      <details><summary>Dois-je le faire moi-même ?</summary><p>Vous pouvez, mais une erreur dans ce fichier peut faire chuter votre présence sur Google. Si vous n'êtes pas certain de la syntaxe, faites-le vérifier — et profitez-en pour mesurer votre visibilité actuelle dans les réponses IA avant de trancher.</p></details>
+    </div>
+
+    <p>Vous voulez savoir si les IA citent déjà votre entreprise — ou celle de vos concurrents&nbsp;? Faites un scan gratuit, sans email, sur <a href="https://citescan.brozapi.com">citescan.brozapi.com</a>.</p>
+
+    <div class="cta-block">
+      <h2>Votre site est-il cité par les IA&nbsp;?</h2>
+      <p>Scan gratuit en 2 minutes, sans email. Audit complet + plan d'action en 24&nbsp;h.</p>
+      <a class="btn" href="/fr/">Lancer mon scan gratuit</a>
+      <p class="price-note">Audit complet dès 29&nbsp;€ — paiement unique, garantie 7 jours</p>
+    </div>
+  </div>
+</main>
+<footer class="site">
+  <div class="container">
+    <p>CiteScan — un produit <a href="https://brozapi.com/" target="_blank" rel="noopener">Brozapi</a> · <a href="/static/mentions-legales.html">Mentions légales</a></p>
+    <p class="tools">Les autres outils Brozapi :
+      <a href="https://badgeia.brozapi.com/" target="_blank" rel="noopener">BadgeIA</a>, le badge de transparence AI Act (39&nbsp;€) ·
+      <a href="https://accessicheck.brozapi.com/" target="_blank" rel="noopener">AccessiCheck</a>, l’audit d’accessibilité RGAA/WCAG (dès 29&nbsp;€)
+    </p>
+    <p class="disclaimer">CiteScan est un audit technique d'aide au référencement IA. Il ne garantit pas l'obtention de citations.</p>
+  </div>
+</footer>
+</body>
+</html>
