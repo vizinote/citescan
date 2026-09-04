@@ -1,0 +1,17 @@
+# CiteScan
+
+> CiteScan mesure si votre site est cité par les IA (Perplexity, Gemini, ChatGPT, Claude) : scan gratuit sans email, puis audit multi-IA en paiement unique (29 € pour 2 moteurs, 39 € pour 3, 49 € pour les 4), rapport PDF + plan d'action livrés sous 24 h, re-scan à J+30 inclus, garantie 7 jours. Produit du studio Brozapi (France).
+
+## Pages clés
+
+- [Accueil (FR) et scan gratuit](https://citescan.brozapi.com/fr/)
+- [Home (EN)](https://citescan.brozapi.com/)
+- [Offre et tarifs (FR)](https://citescan.brozapi.com/offre.html)
+- [Offer and pricing (EN)](https://citescan.brozapi.com/en/offer.html)
+- [Blog GEO / visibilité IA](https://citescan.brozapi.com/blog/)
+- [Guides par secteur](https://citescan.brozapi.com/secteurs/)
+- [Mentions légales](https://citescan.brozapi.com/mentions-legales.html)
+
+## Contact
+
+- Studio Brozapi : https://brozapi.com/ — contact@brozapi.com

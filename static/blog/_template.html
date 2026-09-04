@@ -1,6 +1,8 @@
 <!doctype html>
 <!-- GABARIT ARTICLE BLOG CITESCAN — copier sous static/blog/<slug>.html (slug = [a-z0-9-]).
-     Remplacer : TITLE, DESCRIPTION, SLUG, H1, INTRO, SECTIONS, DATE. Ne pas renommer ce fichier. -->
+     Remplacer : TITLE, DESCRIPTION, SLUG, H1, INTRO, SECTIONS, DATE, DATE_FR. Ne pas renommer ce fichier.
+     DATE = YYYY-MM-DD (vraie date de publication), DATE_FR = « 4 septembre 2026 ».
+     Mise à jour d'un article existant : datePublished INCHANGÉE, dateModified + <time datetime> = date du jour. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -10,7 +12,7 @@
 <link rel="canonical" href="https://citescan.brozapi.com/blog/SLUG.html">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/seo.css">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"H1","datePublished":"DATE","author":{"@type":"Organization","name":"CiteScan (Brozapi)"}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"H1","datePublished":"DATE","dateModified":"DATE","author":{"@type":"Organization","name":"CiteScan (Brozapi)"}}</script>
 </head>
 <body>
 <header class="site">
@@ -34,6 +36,7 @@
   <div class="container">
     <p class="breadcrumb"><a href="/fr/">Accueil</a> &rsaquo; <a href="/blog/">Blog</a> &rsaquo; H1</p>
     <h1>H1</h1>
+    <p style="margin-top:0"><em>Publié le <time datetime="DATE">DATE_FR</time></em></p>
     <p class="intro">INTRO</p>
 
     <!-- SECTIONS : h2 + p/ul, ton pédagogue zéro jargon, aucun chiffre inventé -->

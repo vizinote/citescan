@@ -381,6 +381,7 @@ _STATIC_PAGES = {
     "/merci.html": "merci.html",
     "/cgv.html": "cgv.html",
     "/mentions-legales.html": "mentions-legales.html",
+    "/llms.txt": "llms.txt",
     "/en/offer.html": "en/offer.html",
     "/en/thanks.html": "en/thanks.html",
     "/en/cgv.html": "en/cgv.html",
