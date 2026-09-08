@@ -121,7 +121,10 @@ async def scan(url: str, request: Request, lang: str = "en"):
     if not internal:
         last = _ip_last_scan.get(ip, 0)
         if now - last < RATE_LIMIT_SECONDS:
-            return JSONResponse({"detail": "Rate limit: 1 scan/IP/hour"}, status_code=429)
+            retry = max(1, int(RATE_LIMIT_SECONDS - (now - last)))
+            return JSONResponse(
+                {"detail": "Rate limit: 1 scan/IP/hour", "retry_after": retry},
+                status_code=429, headers={"Retry-After": str(retry)})
 
     if domain in _cache and now - _cache[domain]["t"] < CACHE_TTL:
         res = _cache[domain]["res"]

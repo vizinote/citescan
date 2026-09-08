@@ -47,7 +47,9 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
   const btn = e.target.querySelector('button');
   const err = document.getElementById('error');
   const res = document.getElementById('result');
+  const rateCta = document.getElementById('rate-cta');
   err.hidden = true; res.hidden = true;
+  if (rateCta) rateCta.hidden = true;
 
   const t = await loadTexts() || {};
   // Normalize: accept bare domains ("example.com" -> "https://example.com")
@@ -71,10 +73,18 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
     const resp = await fetch(`/api/scan?url=${encodeURIComponent(url)}&lang=${Lang}`);
     const data = await resp.json();
     if (!resp.ok) {
-      err.textContent = resp.status === 429
-        ? (t.form_error_rate || data.detail)
-        : (t.form_error_network || data.detail || 'Error');
-      err.hidden = false;
+      if (resp.status === 429) {
+        const mins = Math.max(1, Math.ceil((data.retry_after || 3600) / 60));
+        err.textContent = (t.form_error_rate || data.detail).replace('{min}', mins);
+        err.hidden = false;
+        if (rateCta) {
+          rateCta.querySelector('a').href = Lang === 'fr' ? '/offre.html' : '/en/offer.html';
+          rateCta.hidden = false;
+        }
+      } else {
+        err.textContent = t.form_error_network || data.detail || 'Error';
+        err.hidden = false;
+      }
       return;
     }
     document.getElementById('score').textContent = data.score;

@@ -64,6 +64,38 @@ res_fr = asyncio.run(main.run_scan("https://inaccessible-zzz.invalid", main.SCAN
 check("run_scan FR localise", res_fr["findings"][1]["text"] == "site inaccessible",
       res_fr["findings"][1]["text"])
 
+# --- 429 enrichi (t_3d24c802) : retry_after + Retry-After, front a de quoi
+# afficher le delai et un CTA vers l'audit payant ---
+main._ip_last_scan.clear()
+main._ip_last_scan["testclient"] = main.time.time() - 10  # scan il y a 10 s
+r = client.get("/api/scan", params={"url": "brozapi.com"})
+check("2e scan -> 429", r.status_code == 429, f"got {r.status_code}")
+if r.status_code == 429:
+    body = r.json()
+    ra = body.get("retry_after")
+    check("retry_after present et borne", isinstance(ra, int) and 0 < ra <= 3600,
+          f"got {ra!r}")
+    check("detail historique conserve", body.get("detail") == "Rate limit: 1 scan/IP/hour")
+    check("header Retry-After coherent", r.headers.get("Retry-After") == str(ra))
+main._ip_last_scan.clear()
+
+# --- front : CTA rate-limit present sur les 2 landings + textes localises ---
+import json  # noqa: E402
+ROOT = os.path.dirname(__file__)
+for lang, page, offer in (("fr", "static/fr/index.html", "/offre.html"),
+                          ("en", "static/index.html", "/en/offer.html")):
+    html = open(os.path.join(ROOT, page), encoding="utf-8").read()
+    check(f"{lang}: bloc rate-cta present", 'id="rate-cta"' in html)
+    check(f"{lang}: rate-cta cache par defaut", 'id="rate-cta" hidden' in html)
+    check(f"{lang}: rate-cta pointe vers l'offre", offer in html)
+    txt = json.load(open(os.path.join(ROOT, "textes", f"{lang}.json"), encoding="utf-8"))
+    check(f"{lang}: form_error_rate avec placeholder {{min}}",
+          "{min}" in txt.get("form_error_rate", ""))
+    check(f"{lang}: rate_cta localise", bool(txt.get("rate_cta")))
+js = open(os.path.join(ROOT, "static", "main.js"), encoding="utf-8").read()
+check("js: lit retry_after", "retry_after" in js)
+check("js: affiche le CTA sur 429", "rateCta.hidden = false" in js)
+
 # --- audit payant : details localises ---
 html_fr = """<html><head><title>Boulangerie Martin</title></head>
 <body><h1>Boulangerie artisanale</h1>""" + "<p>mot " * 350 + "</p></body></html>"
