@@ -102,6 +102,28 @@ for offer_page in ("offre.html", os.path.join("en", "offer.html")):
 check("js: lit retry_after", "retry_after" in js)
 check("js: affiche le CTA sur 429", "rateCta.hidden = false" in js)
 
+# --- CTA de fin de scan adapte au score (t_9933f73d) ---
+# Score eleve (>= 85, jamais de fail possible) : angle « les IA vous
+# citent-elles vraiment ? » ; sinon l'angle « combler l'ecart » est conserve.
+for lang in ("fr", "en"):
+    txt = json.load(open(os.path.join(ROOT, "textes", f"{lang}.json"), encoding="utf-8"))
+    check(f"{lang}: variante offer_title_high presente et distincte",
+          bool(txt.get("offer_title_high")) and
+          txt["offer_title_high"] != txt.get("offer_title"))
+check("fr: variante score eleve = angle citations reelles",
+      "citent-elles vraiment" in
+      json.load(open(os.path.join(ROOT, "textes", "fr.json"), encoding="utf-8"))["offer_title_high"])
+check("en: variante score eleve = angle citations reelles",
+      "actually cite you" in
+      json.load(open(os.path.join(ROOT, "textes", "en.json"), encoding="utf-8"))["offer_title_high"])
+check("js: bascule sur offer_title_high au seuil 85",
+      "data.score >= 85" in js and "offer_title_high" in js)
+# Le titre generique (score faible) reste le defaut dans le HTML des 2 landings.
+for lang, page in (("fr", "static/fr/index.html"), ("en", "static/index.html")):
+    html = open(os.path.join(ROOT, page), encoding="utf-8").read()
+    check(f"{lang}: titre generique conserve par defaut",
+          'data-i18n="offer_title"' in html)
+
 # --- audit payant : details localises ---
 html_fr = """<html><head><title>Boulangerie Martin</title></head>
 <body><h1>Boulangerie artisanale</h1>""" + "<p>mot " * 350 + "</p></body></html>"

@@ -108,6 +108,15 @@ document.getElementById('scan-form').addEventListener('submit', async (e) => {
       ul.appendChild(li);
     }
     res.hidden = false;
+    // CTA adapte au score (t_9933f73d) : seuil 85/100. Tout fail plafonne le
+    // score a 80 (robots/extract : 70 max ; eeat sans HTTPS : 80) et les warns
+    // « techniques pas au point » (robots illisible : 80) restent aussi sous
+    // le seuil. Au-dessus, le site est techniquement propre et l'angle
+    // « combler l'ecart » ne vend plus : on bascule sur l'argument reel —
+    // le scan ne prouve pas les citations. En dessous, titre generique.
+    if (data.score >= 85 && t.offer_title_high) {
+      document.querySelector('#result .offer h2').textContent = t.offer_title_high;
+    }
     const cta = document.querySelector('#result .cta');
     cta.href = Lang === 'fr' ? '/offre.html' : '/en/offer.html';
   } catch {
