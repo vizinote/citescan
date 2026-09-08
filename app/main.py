@@ -214,7 +214,10 @@ async def run_scan(domain: str, T: dict) -> dict:
         {"status": checks["jsonld"]["status"], "text": _first("jsonld")},
         {"status": checks["eeat"]["status"], "text": _first("eeat")},
     ]
-    return {"score": min(score, 100), "findings": findings[:3]}
+    # Les 4 signaux calcules sont TOUS renvoyes (t_857449e8) : la landing
+    # annonce « 4 signaux techniques » — ne jamais tronquer (ex-[:3] masquait
+    # le signal E-E-A-T alors qu'il compte dans le score).
+    return {"score": min(score, 100), "findings": findings}
 
 
 @app.get("/api/audit")

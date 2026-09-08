@@ -53,12 +53,12 @@ check("site injoignable -> pas de 500", r.status_code in (200, 502, 429),
       f"got {r.status_code}")  # 429 toleré : rate-limit si la suite tourne 2x dans l'heure
 if r.status_code == 200:
     body = r.json()
-    check("findings presentes meme en echec", len(body.get("findings", [])) == 3)
+    check("findings presentes meme en echec", len(body.get("findings", [])) == 4)
     check("pas de texte vide", all(f.get("text") for f in body["findings"]))
 
 # --- run_scan : aucune liste vide ne fait planter ---
 res = asyncio.run(main.run_scan("https://inaccessible-zzz.invalid", main.SCAN_TEXTS["en"]))
-check("run_scan injoignable OK", len(res["findings"]) == 3 and
+check("run_scan injoignable OK", len(res["findings"]) == 4 and
       all(f["text"] for f in res["findings"]))
 res_fr = asyncio.run(main.run_scan("https://inaccessible-zzz.invalid", main.SCAN_TEXTS["fr"]))
 check("run_scan FR localise", res_fr["findings"][1]["text"] == "site inaccessible",
