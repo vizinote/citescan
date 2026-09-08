@@ -4,6 +4,7 @@
   "hero_badge": "Free scan — no email required",
   "hero_offer_link": "See the full audit — from €29",
   "scan_placeholder": "https://yoursite.com",
+  "scan_aria": "Your website address",
   "scan_button": "Scan my site",
   "scan_analyzing": "Analyzing…",
   "score_title": "AI visibility score",

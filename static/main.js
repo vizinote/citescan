@@ -30,6 +30,12 @@ async function loadTexts() {
       el.setAttribute('placeholder', t[key]);
     }
   });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+    const key = el.getAttribute('data-i18n-aria-label');
+    if (t[key] !== undefined) {
+      el.setAttribute('aria-label', t[key]);
+    }
+  });
   // Update switch link: point to the OTHER language page
   const sw = document.getElementById('lang-switch');
   if (sw) {

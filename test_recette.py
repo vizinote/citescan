@@ -92,7 +92,13 @@ for lang, page, offer in (("fr", "static/fr/index.html", "/offre.html"),
     check(f"{lang}: form_error_rate avec placeholder {{min}}",
           "{min}" in txt.get("form_error_rate", ""))
     check(f"{lang}: rate_cta localise", bool(txt.get("rate_cta")))
+    check(f"{lang}: url-input a un nom accessible (aria-label)", 'id="url-input"' in html and 'aria-label=' in html.split('id="url-input"')[1].split('>')[0])
+    check(f"{lang}: cle scan_aria localisee", bool(txt.get("scan_aria")))
 js = open(os.path.join(ROOT, "static", "main.js"), encoding="utf-8").read()
+check("js: gere data-i18n-aria-label", "data-i18n-aria-label" in js)
+for offer_page in ("offre.html", os.path.join("en", "offer.html")):
+    oh = open(os.path.join(ROOT, offer_page), encoding="utf-8").read()
+    check(f"{offer_page}: label pour order-domain", 'for="order-domain"' in oh)
 check("js: lit retry_after", "retry_after" in js)
 check("js: affiche le CTA sur 429", "rateCta.hidden = false" in js)
 

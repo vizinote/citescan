@@ -4,6 +4,7 @@
   "hero_badge": "Scan gratuit — sans email",
   "hero_offer_link": "Voir l'audit complet — dès 29 €",
   "scan_placeholder": "https://votresite.fr",
+  "scan_aria": "Adresse de votre site",
   "scan_button": "Scanner mon site",
   "scan_analyzing": "Analyse…",
   "score_title": "Score de visibilité IA",
