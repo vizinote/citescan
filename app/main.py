@@ -375,6 +375,14 @@ async def rescan_page(token: str):
     )
 
 
+# Redirection 301 de l'ancienne page legale courte (liens footers historiques)
+# vers la page canonique — doit etre declaree AVANT le mount /static.
+@app.api_route("/static/mentions-legales.html", methods=["GET", "HEAD"], include_in_schema=False)
+async def _legacy_legal_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/mentions-legales.html", status_code=301)
+
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/textes", StaticFiles(directory="textes"), name="textes")
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
@@ -420,7 +428,8 @@ async def index_fr():
 INDEXNOW_KEY = "a9e8fc609645365e02a9b0e2703de984"
 
 # Pages publiques indexables (les rapports /rapports/<token> sont noindex,
-# /merci et l'offre restent hors sitemap tant que le paiement n'est pas actif).
+# /merci reste hors sitemap : page post-paiement sans interet SEO ; les pages
+# d'offre y figurent depuis que les Payment Links sont actifs — GO 24/08/2026).
 # Les pages SEO editoriales vivent dans static/blog/ (articles, /blog/<slug>.html)
 # et static/secteurs/ (pages sectorielles, /secteurs/<slug>.html) : elles sont
 # servees et listees au sitemap automatiquement (t_af45f0e5).
@@ -479,6 +488,8 @@ def _sitemap_urls():
     urls = [
         ("https://citescan.brozapi.com/", "1.0"),
         ("https://citescan.brozapi.com/fr/", "0.9"),
+        ("https://citescan.brozapi.com/offre.html", "0.8"),
+        ("https://citescan.brozapi.com/en/offer.html", "0.8"),
     ]
     for kind in ("blog", "secteurs"):
         if os.path.isfile(os.path.join(_SEO_DIRS[kind], "index.html")):

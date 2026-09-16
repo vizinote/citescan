@@ -84,5 +84,18 @@ check("secteur inconnu 404", r.status_code == 404)
 r = client.get("/sitemap.xml")
 check("sitemap exclut le gabarit _template", "_template" not in r.text)
 
+# --- chantier indexation (t_1fba8a91) ---
+r = client.get("/sitemap.xml")
+check("sitemap liste /offre.html", "https://citescan.brozapi.com/offre.html" in r.text)
+check("sitemap liste /en/offer.html", "https://citescan.brozapi.com/en/offer.html" in r.text)
+check("sitemap exclut /merci.html", "/merci.html" not in r.text)
+r = client.get("/static/mentions-legales.html", follow_redirects=False)
+check("legacy /static/mentions-legales.html 301", r.status_code == 301)
+check("legacy redirect vers canonique", r.headers.get("location") == "/mentions-legales.html")
+for path, canonical in (("/fr/", "/mentions-legales.html"), ("/", "/en/legal.html")):
+    r = client.get(path)
+    check(f"footer {path} pointe {canonical}", f'href="{canonical}"' in r.text)
+    check(f"footer {path} sans ancienne URL", "/static/mentions-legales.html" not in r.text)
+
 print(f"\n{PASS} PASS, {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)
